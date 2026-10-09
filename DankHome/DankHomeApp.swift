@@ -5,15 +5,20 @@
 //  Created by Jason Dank on 10/8/26.
 //
 
+import AppIntents
 import SwiftUI
 
 @main
 struct DankHomeApp: App {
-    @State private var home = HomeStore()
-    @State private var music = MusicStore()
-    @State private var settings = AppSettings()
-    @State private var weather = WeatherStore()
-    @State private var idle = IdleMonitor()
+    // Shared so Siri and Shortcuts requests reach the same home and settings.
+    @State private var home = AppStores.shared.home
+    @State private var music = AppStores.shared.music
+    @State private var settings = AppStores.shared.settings
+    @State private var weather = AppStores.shared.weather
+    @State private var idle = AppStores.shared.idle
+    @State private var assistant = AppStores.shared.assistant
+    @State private var recorder = AppStores.shared.recorder
+    @State private var undo = AppStores.shared.undo
 
     var body: some Scene {
         WindowGroup {
@@ -31,8 +36,19 @@ struct DankHomeApp: App {
             .environment(settings)
             .environment(weather)
             .environment(idle)
+            .environment(assistant)
+            .environment(recorder)
+            .environment(undo)
             .fontDesign(settings.prefs.appFont.design)
             .tint(settings.prefs.accent.color)
+            .task { assistant.prewarm() }
+            // Keep Siri's list of button names current.
+            .onChange(of: settings.sceneButtons(home: home).map(\.name), initial: true) {
+                DankHomeShortcuts.updateAppShortcutParameters()
+            }
+            .onChange(of: settings.prefs.demoMode, initial: true) { _, demo in
+                home.forceDemo = demo
+            }
             .onChange(of: settings.prefs.keepAwake, initial: true) { _, keepAwake in
                 // Wall-mounted: keep the screen awake while the app is open.
                 UIApplication.shared.isIdleTimerDisabled = keepAwake

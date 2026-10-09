@@ -404,6 +404,8 @@
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "DankHome plays and controls your Apple Music.";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "DankHome controls the lights in your home.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DankHome shows the weather where you live.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DankHome listens when you talk to the assistant.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "DankHome turns what you say to the assistant into text, on this iPad.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -441,6 +443,8 @@
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "DankHome plays and controls your Apple Music.";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "DankHome controls the lights in your home.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DankHome shows the weather where you live.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DankHome listens when you talk to the assistant.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "DankHome turns what you say to the assistant into text, on this iPad.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

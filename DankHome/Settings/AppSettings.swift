@@ -15,12 +15,21 @@ final class AppSettings {
     private static let key = "preferences.v1"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
-           let saved = try? JSONDecoder().decode(Preferences.self, from: data) {
-            prefs = saved
-        } else {
-            prefs = Preferences()
+        prefs = Self.load() ?? Preferences()
+    }
+
+    /// Lays the saved values over the defaults, so settings added in a newer version
+    /// start at their default instead of wiping everything else.
+    private static func load() -> Preferences? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let defaultsData = try? JSONEncoder().encode(Preferences()),
+              var merged = try? JSONSerialization.jsonObject(with: defaultsData) as? [String: Any] else { return nil }
+        for (field, value) in saved {
+            merged[field] = value
         }
+        guard let mergedData = try? JSONSerialization.data(withJSONObject: merged) else { return nil }
+        return try? JSONDecoder().decode(Preferences.self, from: mergedData)
     }
 
     func reset() { prefs = Preferences() }
@@ -37,6 +46,8 @@ struct Preferences: Codable, Equatable {
     var theme: BackgroundTheme = .ambient
     var appFont: AppFont = .classic
     var accent: RGBAColor = .init(.cyan)
+    var weatherEffects = true
+    var tintMusicCard = true
 
     // Clock
     var clock = ClockStyle()
@@ -44,13 +55,23 @@ struct Preferences: Codable, Equatable {
     var showDate = true
 
     // Dashboard
-    var tileSize: TileSize = .regular
-    var musicOnLeft = false
+    var sidePanelOnLeft = true
     var showWeather = true
     var showClimate = true
     var showScenes = true
-    var showPlaylists = true
+    var showMusic = true
+    var showDevices = true
     var keepAwake = true
+    var demoMode = false
+    var clickSounds = false
+    var confirmAllOff = true
+    /// Lights shown first, as "Room|Name".
+    var pinnedLights: [String] = []
+    /// nil mirrors the Home app's scenes.
+    var sceneButtons: [SceneButton]?
+
+    // Assistant
+    var assistantSpeaks = true
 
     // Night clock
     var nightEnabled = true
@@ -62,6 +83,8 @@ struct Preferences: Codable, Equatable {
     var nightShowMusic = true
     var nightDimsScreen = true
     var nightScreenLevel = 0.15
+    /// Deep red between midnight and 6 AM, easy on night vision.
+    var nightRedAfterMidnight = true
 
     // Weather
     var temperatureUnit: TemperatureUnit = Locale.current.measurementSystem == .us ? .fahrenheit : .celsius
@@ -180,28 +203,6 @@ enum BackgroundTheme: String, Codable, CaseIterable, Identifiable {
         case .forest: (Color(red: 0.03, green: 0.07, blue: 0.04), .green, .teal)
         case .graphite: (Color(white: 0.08), Color(white: 0.35), Color(white: 0.2))
         case .black: (.black, .clear, .clear)
-        }
-    }
-}
-
-enum TileSize: String, Codable, CaseIterable, Identifiable {
-    case compact, regular, large
-    var id: Self { self }
-    var title: String { rawValue.capitalized }
-
-    var minWidth: CGFloat {
-        switch self {
-        case .compact: 140
-        case .regular: 165
-        case .large: 210
-        }
-    }
-
-    var height: CGFloat {
-        switch self {
-        case .compact: 150
-        case .regular: 180
-        case .large: 220
         }
     }
 }

@@ -112,7 +112,7 @@ final class WeatherStore {
                 )
             }
             .filter { $0.id > now }
-            .prefix(6)
+            .prefix(12)
             .map { $0 }
     }
 

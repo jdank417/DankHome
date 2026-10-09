@@ -13,24 +13,20 @@ struct WeatherSummary: View {
     var body: some View {
         let prefs = settings.prefs
         if let current = weather.current {
-            HStack(spacing: 16) {
+            HStack(spacing: 10) {
                 Image(systemName: WeatherCode.symbol(current.code, isDay: current.isDay))
                     .symbolRenderingMode(.multicolor)
-                    .font(.system(size: 52))
-                VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: 28))
+                VStack(alignment: .leading, spacing: 0) {
                     Text(prefs.formatTemperature(celsius: current.temperature))
-                        .font(.system(size: 52, weight: .light))
-                    Text("\(WeatherCode.description(current.code)) · H:\(prefs.formatTemperature(celsius: current.high)) L:\(prefs.formatTemperature(celsius: current.low))")
-                        .font(.subheadline.weight(.medium))
+                        .font(.system(size: 28, weight: .light))
+                    Text("H:\(prefs.formatTemperature(celsius: current.high)) L:\(prefs.formatTemperature(celsius: current.low))")
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.white.opacity(0.7))
-                    if !weather.placeName.isEmpty {
-                        Label(weather.placeName, systemImage: "location.fill")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
                 }
             }
             .foregroundStyle(.white)
+            .lineLimit(1)
         } else if let error = weather.errorMessage {
             Label(error, systemImage: "cloud.slash")
                 .font(.footnote)
@@ -43,38 +39,99 @@ struct WeatherSummary: View {
 struct ForecastCard: View {
     @Environment(WeatherStore.self) private var weather
     @Environment(AppSettings.self) private var settings
+    var hourCount = 6
+    /// In a tall column, list the hours top to bottom to use the space evenly.
+    var vertical = false
 
     var body: some View {
         if let current = weather.current {
-            VStack(alignment: .leading, spacing: 16) {
-                SectionTitle(title: "Forecast", symbol: "cloud.sun.fill")
-                HStack(spacing: 0) {
-                    ForEach(weather.hours) { hour in
-                        VStack(spacing: 10) {
-                            Text(hour.id, format: .dateTime.hour())
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.white.opacity(0.7))
-                            Image(systemName: WeatherCode.symbol(hour.code, isDay: hour.isDay))
-                                .symbolRenderingMode(.multicolor)
-                                .font(.title2)
-                                .frame(height: 30)
-                            Text(settings.prefs.formatTemperature(celsius: hour.temperature))
-                                .font(.title3.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity)
+            // The fullest version that fits the space wins; nothing ever scrolls.
+            ViewThatFits(in: .vertical) {
+                if vertical {
+                    ForEach([10, 8, 6, 4], id: \.self) { count in
+                        full(current) { hourList(count) }
                     }
                 }
-                HStack(spacing: 20) {
-                    Label("Feels \(settings.prefs.formatTemperature(celsius: current.feelsLike))", systemImage: "thermometer.medium")
-                    Label("\(Int(current.humidity))%", systemImage: "humidity.fill")
+                full(current) { hourRow(hourCount) }
+                VStack(alignment: .leading, spacing: Metrics.inner) {
+                    titleRow(current)
+                    hourRow(hourCount)
                 }
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.7))
+                titleRow(current)
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .card()
         }
+    }
+
+    private func full(_ current: CurrentWeather, @ViewBuilder hours: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: Metrics.inner) {
+            titleRow(current)
+            hours()
+                .frame(maxHeight: .infinity)
+            HStack(spacing: Metrics.gap) {
+                Label("Feels \(settings.prefs.formatTemperature(celsius: current.feelsLike))", systemImage: "thermometer.medium")
+                Label("\(Int(current.humidity))%", systemImage: "humidity.fill")
+            }
+            .font(.caption)
+            .foregroundStyle(.white.opacity(0.7))
+        }
+    }
+
+    private func titleRow(_ current: CurrentWeather) -> some View {
+        HStack {
+            SectionTitle(title: weather.placeName.isEmpty ? "Forecast" : weather.placeName, symbol: "cloud.sun.fill")
+            Spacer(minLength: 0)
+            Text(WeatherCode.description(current.code))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1)
+        }
+    }
+
+    private func hourRow(_ count: Int) -> some View {
+        HStack(spacing: 0) {
+            ForEach(weather.hours.prefix(count)) { hour in
+                VStack(spacing: 6) {
+                    Text(hour.id, format: .dateTime.hour())
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .fixedSize()
+                    icon(hour)
+                    Text(settings.prefs.formatTemperature(celsius: hour.temperature))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func hourList(_ count: Int) -> some View {
+        VStack(spacing: 0) {
+            ForEach(weather.hours.prefix(count)) { hour in
+                HStack {
+                    Text(hour.id, format: .dateTime.hour())
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 56, alignment: .leading)
+                    icon(hour)
+                    Spacer(minLength: 0)
+                    Text(settings.prefs.formatTemperature(celsius: hour.temperature))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(minHeight: 28)
+                .frame(maxHeight: 36)
+            }
+        }
+    }
+
+    private func icon(_ hour: HourForecast) -> some View {
+        Image(systemName: WeatherCode.symbol(hour.code, isDay: hour.isDay))
+            .symbolRenderingMode(.multicolor)
+            .font(.body)
+            .frame(width: 28, height: 20)
     }
 }
 
@@ -83,6 +140,7 @@ struct ThermostatCard: View {
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
     var thermostat: Thermostat
+    var dialSize: CGFloat = 170
 
     private var step: Double {
         // 1°F ≈ 0.5°C, so both units move one displayed degree per tap.
@@ -91,18 +149,19 @@ struct ThermostatCard: View {
 
     var body: some View {
         let prefs = settings.prefs
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Metrics.inner) {
             HStack {
                 SectionTitle(title: thermostat.name, symbol: "thermometer.medium")
                 Spacer()
                 if let humidity = thermostat.humidity {
                     Label("\(Int(humidity))%", systemImage: "humidity.fill")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                 }
             }
 
-            HStack(spacing: 20) {
+            Spacer(minLength: 0)
+            HStack(spacing: Metrics.chipGap) {
                 adjustButton("minus") { home.setTarget(thermostat.targetC - step, for: thermostat.id) }
                 dial(prefs)
                 adjustButton("plus") { home.setTarget(thermostat.targetC + step, for: thermostat.id) }
@@ -110,19 +169,21 @@ struct ThermostatCard: View {
             .frame(maxWidth: .infinity)
             .disabled(thermostat.mode == .off)
 
-            GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            GlassEffectContainer(spacing: Metrics.chipGap) {
+                HStack(spacing: Metrics.chipGap) {
                     ForEach(Thermostat.Mode.allCases) { mode in
                         let selected = thermostat.mode == mode
                         Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Feedback.tap()
                             withAnimation(.snappy) { home.setMode(mode, for: thermostat.id) }
                         } label: {
                             Label(mode.title, systemImage: mode.symbol)
+                                .labelStyle(.iconOnly)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(selected ? .black : .white)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity)
+                            .foregroundStyle(selected ? .black : .white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: Metrics.headerHeight)
                         }
                         .buttonStyle(.plain)
                         .glassEffect(selected ? .regular.tint(mode == .off ? .white : thermostat.color).interactive()
@@ -132,6 +193,7 @@ struct ThermostatCard: View {
             }
         }
         .foregroundStyle(.white)
+        .frame(maxHeight: .infinity)
         .card()
         .opacity(thermostat.isReachable ? 1 : 0.55)
     }
@@ -141,11 +203,11 @@ struct ThermostatCard: View {
         return ZStack {
             Circle()
                 .trim(from: 0, to: 0.75)
-                .stroke(.white.opacity(0.12), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                .stroke(.white.opacity(0.12), style: StrokeStyle(lineWidth: dialSize * 0.07, lineCap: .round))
                 .rotationEffect(.degrees(135))
             Circle()
                 .trim(from: 0, to: 0.75 * (thermostat.mode == .off ? 0 : progress))
-                .stroke(thermostat.color.gradient, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                .stroke(thermostat.color.gradient, style: StrokeStyle(lineWidth: dialSize * 0.07, lineCap: .round))
                 .rotationEffect(.degrees(135))
                 .shadow(color: thermostat.color.opacity(0.6), radius: 10)
             VStack(spacing: 2) {
@@ -154,14 +216,14 @@ struct ThermostatCard: View {
                     .textCase(.uppercase)
                     .foregroundStyle(thermostat.color)
                 Text(thermostat.mode == .off ? "Off" : prefs.formatTemperature(celsius: thermostat.targetC))
-                    .font(.system(size: 56, weight: .light))
+                    .font(.system(size: dialSize * 0.3, weight: .light))
                     .contentTransition(.numericText())
                 Text("Now \(prefs.formatTemperature(celsius: thermostat.currentC))")
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.white.opacity(0.6))
             }
         }
-        .frame(width: 190, height: 190)
+        .frame(width: dialSize, height: dialSize)
         .animation(.snappy, value: thermostat)
     }
 
@@ -176,33 +238,16 @@ struct ThermostatCard: View {
 
     private func adjustButton(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Feedback.tap()
             action()
         } label: {
             Image(systemName: symbol)
-                .font(.title2.weight(.semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
+                .frame(width: Metrics.headerHeight + 4, height: Metrics.headerHeight + 4)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
     }
 }
 
-/// Thermostats + forecast, shown together.
-struct ClimateSection: View {
-    @Environment(HomeStore.self) private var home
-    @Environment(AppSettings.self) private var settings
-    var sideBySide: Bool
-
-    var body: some View {
-        let thermostats = settings.prefs.showClimate ? home.visibleThermostats : []
-        let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
-        if !thermostats.isEmpty || settings.prefs.showWeather {
-            layout {
-                ForEach(thermostats) { ThermostatCard(thermostat: $0) }
-                if settings.prefs.showWeather { ForecastCard() }
-            }
-        }
-    }
-}

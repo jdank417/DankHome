@@ -129,8 +129,10 @@ struct NightClockView: View {
                 .font(.title2)
                 .opacity(0.8)
             }
-            .foregroundStyle(prefs.nightClock.color.color)
+            .foregroundStyle(Self.isLateNight(context.date) && prefs.nightRedAfterMidnight
+                             ? Color(red: 0.75, green: 0.04, blue: 0.02) : prefs.nightClock.color.color)
             .opacity(prefs.nightBrightness)
+            .animation(.easeInOut(duration: 4), value: Self.isLateNight(context.date))
             .padding(60)
             .offset(drift)
             .animation(.easeInOut(duration: 3), value: drift)
@@ -140,6 +142,10 @@ struct NightClockView: View {
         .ignoresSafeArea()
         .contentShape(.rect)
         .onTapGesture { idle.wake() }
+    }
+
+    private static func isLateNight(_ date: Date) -> Bool {
+        Calendar.current.component(.hour, from: date) < 6
     }
 
     private static func drift(for date: Date) -> CGSize {

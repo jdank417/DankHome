@@ -25,13 +25,27 @@ struct SettingsView: View {
                     NavigationLink { AppearanceSettings() } label: {
                         row("Appearance", "paintpalette.fill", .pink, detail: settings.prefs.theme.title)
                     }
+                    NavigationLink { SceneButtonsSettings() } label: {
+                        row("Scene Buttons", "hand.tap.fill", .teal, detail: nil)
+                    }
                     NavigationLink { DashboardSettings() } label: {
                         row("Dashboard", "square.grid.2x2.fill", .orange, detail: nil)
+                    }
+                    NavigationLink { AssistantSettings() } label: {
+                        row("Assistant", "sparkles", .purple, detail: nil)
                     }
                     NavigationLink { WeatherSettings() } label: {
                         row("Weather", "cloud.sun.fill", .cyan,
                             detail: settings.prefs.useCurrentLocation ? "Current Location" : settings.prefs.cityName)
                     }
+                }
+
+                Section {
+                    Toggle(isOn: $settings.prefs.demoMode) {
+                        row("Demo Mode", "play.rectangle.fill", .green, detail: nil)
+                    }
+                } footer: {
+                    Text("Shows pretend lights, scenes and a thermostat instead of your home. Nothing you tap changes your real devices.")
                 }
 
                 Section {
@@ -226,6 +240,7 @@ struct NightClockSettings: View {
                     Slider(value: $settings.prefs.nightBrightness, in: 0.1...1)
                     Image(systemName: "sun.max.fill")
                 }
+                Toggle("Red After Midnight", isOn: $settings.prefs.nightRedAfterMidnight)
                 Toggle("Dim Screen Backlight", isOn: $settings.prefs.nightDimsScreen)
                 if settings.prefs.nightDimsScreen {
                     HStack {
@@ -279,6 +294,15 @@ struct AppearanceSettings: View {
                 Text("Ambient follows the album art and the color of your lights.")
             }
 
+            Section {
+                Toggle("Animated Weather", isOn: $settings.prefs.weatherEffects)
+                Toggle("Album Art Background", isOn: $settings.prefs.tintMusicCard)
+            } header: {
+                Text("Effects")
+            } footer: {
+                Text("Animated Weather shows rain, snow, clouds and lightning behind the dashboard when it's happening outside.")
+            }
+
             Section("Accent Color") {
                 ColorSwatchRow(color: $settings.prefs.accent)
             }
@@ -324,21 +348,28 @@ struct DashboardSettings: View {
     var body: some View {
         @Bindable var settings = settings
         Form {
-            Section("Light Tiles") {
-                Picker("Size", selection: $settings.prefs.tileSize) {
-                    ForEach(TileSize.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            Section("Layout") {
-                Picker("Music Panel", selection: $settings.prefs.musicOnLeft) {
-                    Text("Right").tag(false)
+            Section {
+                Picker("Side Panel", selection: $settings.prefs.sidePanelOnLeft) {
                     Text("Left").tag(true)
+                    Text("Right").tag(false)
                 }
-                Toggle("Weather", isOn: $settings.prefs.showWeather)
                 Toggle("Thermostat", isOn: $settings.prefs.showClimate)
+                Toggle("Weather", isOn: $settings.prefs.showWeather)
+                Toggle("Now Playing", isOn: $settings.prefs.showMusic)
+                Toggle("Locks, Doors & Devices", isOn: $settings.prefs.showDevices)
                 Toggle("Scenes", isOn: $settings.prefs.showScenes)
-                Toggle("Playlists", isOn: $settings.prefs.showPlaylists)
+            } header: {
+                Text("Layout")
+            } footer: {
+                Text("Everything always fits on one screen. Hiding a section gives the lights more room.")
+            }
+            Section {
+                Toggle("Click Sounds", isOn: $settings.prefs.clickSounds)
+                Toggle("Confirm Before All Off", isOn: $settings.prefs.confirmAllOff)
+            } header: {
+                Text("Feedback")
+            } footer: {
+                Text("Click Sounds plays a soft tick with each tap. Confirm Before All Off asks first when five or more lights are on.")
             }
             Section {
                 Toggle("Keep Screen On", isOn: $settings.prefs.keepAwake)
@@ -347,6 +378,33 @@ struct DashboardSettings: View {
             }
         }
         .navigationTitle("Dashboard")
+    }
+}
+
+// MARK: - Assistant
+
+struct AssistantSettings: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(AssistantStore.self) private var assistant
+
+    var body: some View {
+        @Bindable var settings = settings
+        Form {
+            Section {
+                LabeledContent("Apple Intelligence", value: assistant.unavailableReason ?? "Ready")
+            } footer: {
+                Text("The assistant runs entirely on this iPad using Apple Intelligence. Nothing you say leaves the device.")
+            }
+            Section {
+                Toggle("Speak Replies", isOn: $settings.prefs.assistantSpeaks)
+            } footer: {
+                Text("Reads answers out loud when you ask with your voice.")
+            }
+            Section("Try saying") {
+                ForEach(AssistantStore.suggestions, id: \.self) { Text("“\($0)”") }
+            }
+        }
+        .navigationTitle("Assistant")
     }
 }
 

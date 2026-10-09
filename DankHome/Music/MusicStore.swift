@@ -15,6 +15,8 @@ final class MusicStore {
     private(set) var errorMessage: String?
 
     @ObservationIgnored let player = SystemMusicPlayer.shared
+    /// Set when playback is controlled while a scene button is being recorded.
+    @ObservationIgnored var touched = false
 
     var isAuthorized: Bool { authorization == .authorized }
 
@@ -37,6 +39,7 @@ final class MusicStore {
     }
 
     func play(_ playlist: Playlist) {
+        touched = true
         Task {
             player.queue = [playlist]
             await attempt { try await player.play() }
@@ -44,6 +47,7 @@ final class MusicStore {
     }
 
     func togglePlayPause() {
+        touched = true
         Task {
             if player.state.playbackStatus == .playing {
                 player.pause()
@@ -53,9 +57,13 @@ final class MusicStore {
         }
     }
 
-    func next() { Task { await attempt { try await player.skipToNextEntry() } } }
+    func next() {
+        touched = true
+        Task { await attempt { try await player.skipToNextEntry() } }
+    }
 
     func previous() {
+        touched = true
         Task {
             if player.playbackTime > 3 {
                 player.restartCurrentEntry()

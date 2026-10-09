@@ -18,7 +18,6 @@ struct DankHomeApp: App {
     @State private var idle = AppStores.shared.idle
     @State private var assistant = AppStores.shared.assistant
     @State private var recorder = AppStores.shared.recorder
-    @State private var undo = AppStores.shared.undo
 
     var body: some Scene {
         WindowGroup {
@@ -38,7 +37,6 @@ struct DankHomeApp: App {
             .environment(idle)
             .environment(assistant)
             .environment(recorder)
-            .environment(undo)
             .fontDesign(settings.prefs.appFont.design)
             .tint(settings.prefs.accent.color)
             .task { assistant.prewarm() }

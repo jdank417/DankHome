@@ -9,7 +9,6 @@ import SwiftUI
 /// the answer pops up on the dashboard without opening anything.
 struct AssistantButton: View {
     @Environment(AssistantStore.self) private var assistant
-    @Environment(UndoCenter.self) private var undo
     @Environment(HomeStore.self) private var home
     var talk: PushToTalk
     var onTap: () -> Void
@@ -39,7 +38,7 @@ struct AssistantButton: View {
                             guard !Task.isCancelled else { return }
                             didHold = true
                             Feedback.press()
-                            talk.start(assistant: assistant, undo: undo, home: home)
+                            talk.start(assistant: assistant)
                         }
                     }
                     .onEnded { _ in
@@ -71,16 +70,14 @@ final class PushToTalk {
 
     var isVisible: Bool { voice.isListening || isThinking || reply != nil || voice.errorMessage != nil }
 
-    func start(assistant: AssistantStore, undo: UndoCenter, home: HomeStore) {
+    func start(assistant: AssistantStore) {
         hideTask?.cancel()
         reply = nil
         voice.onFinish = { [weak self] text in
             guard let self else { return }
             Task {
                 self.isThinking = true
-                await undo.perform("Assistant: \(text)", home: home) {
-                    await assistant.send(text, spoken: true)
-                }
+                await assistant.send(text, spoken: true)
                 self.isThinking = false
                 self.show(assistant.messages.last(where: { !$0.fromUser })?.text ?? "Done.")
             }

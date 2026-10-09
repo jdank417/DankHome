@@ -115,7 +115,6 @@ struct LightsGrid: View {
     @Environment(HomeStore.self) private var home
     @Environment(IdleMonitor.self) private var idle
     @Environment(AppSettings.self) private var settings
-    @Environment(UndoCenter.self) private var undo
     @State private var detailLight: Light?
     @State private var confirmAllOff = false
 
@@ -130,9 +129,7 @@ struct LightsGrid: View {
 
     private func setAll(on: Bool) {
         Feedback.press()
-        undo.perform(on ? "All lights on" : "All lights off", home: home) {
-            withAnimation(.snappy) { home.setAllVisible(on: on) }
-        }
+        withAnimation(.snappy) { home.setAllVisible(on: on) }
     }
 
     private let spacing = Metrics.gap
@@ -589,7 +586,6 @@ struct LightDetailView: View {
 
 struct ScenesRow: View {
     @Environment(HomeStore.self) private var home
-    @Environment(UndoCenter.self) private var undo
     @Environment(MusicStore.self) private var music
     @Environment(AppSettings.self) private var settings
 
@@ -603,9 +599,7 @@ struct ScenesRow: View {
                 menuSymbol: "sparkles"
             ) { chip in
                 if let button = buttons.first(where: { $0.id.uuidString == chip.id }) {
-                    undo.perform(button.name, home: home) {
-                        SceneRunner(home: home, music: music, settings: settings).run(button)
-                    }
+                    SceneRunner(home: home, music: music, settings: settings).run(button)
                 }
             }
         }

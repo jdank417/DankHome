@@ -21,7 +21,6 @@ final class AppStores {
     let idle = IdleMonitor()
     let assistant = AssistantStore()
     let recorder = SceneRecorder()
-    let undo = UndoCenter()
 
     var runner: SceneRunner { SceneRunner(home: home, music: music, settings: settings) }
 

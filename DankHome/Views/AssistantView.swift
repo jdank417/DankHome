@@ -9,7 +9,6 @@ import SwiftUI
 /// tap the sparkle button and just talk.
 struct AssistantView: View {
     @Environment(AssistantStore.self) private var assistant
-    @Environment(UndoCenter.self) private var undo
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
@@ -180,10 +179,7 @@ struct AssistantView: View {
         Task { await send(text, spoken: false) }
     }
 
-    /// Sends, and offers Undo on the dashboard if the request changed anything.
     private func send(_ text: String, spoken: Bool) async {
-        await undo.perform("Assistant: \(text)", home: home) {
-            await assistant.send(text, spoken: spoken)
-        }
+        await assistant.send(text, spoken: spoken)
     }
 }

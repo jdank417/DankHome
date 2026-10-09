@@ -63,10 +63,6 @@ struct DashboardView: View {
                     .padding(.top, 96)
                     .padding(.horizontal, Metrics.margin)
             }
-            .overlay(alignment: .bottom) {
-                UndoChip()
-                    .padding(.bottom, Metrics.margin + 4)
-            }
             .overlay {
                 // Red frame while a scene button is being recorded.
                 if recorder.isRecording {
@@ -254,5 +250,4 @@ struct DashboardView: View {
         .environment(IdleMonitor())
         .environment(AssistantStore())
         .environment(SceneRecorder())
-        .environment(UndoCenter())
 }

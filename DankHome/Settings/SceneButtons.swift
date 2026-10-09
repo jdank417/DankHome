@@ -392,32 +392,111 @@ struct SceneStep: Identifiable {
 /// The steps as a list, each removable.
 struct SceneStepList: View {
     var steps: [SceneStep]
+    var onEdit: (SceneStep) -> Void
     var onRemove: (SceneStep) -> Void
 
     var body: some View {
         ForEach(steps) { step in
-            HStack(spacing: 12) {
-                Image(systemName: step.symbol)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(step.color)
-                    .frame(width: 34, height: 34)
-                    .background(step.color.opacity(0.18), in: .circle)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(step.title)
-                    if let detail = step.detail, !detail.isEmpty {
-                        Text(detail).font(.caption).foregroundStyle(.secondary)
+            Button {
+                onEdit(step)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: step.symbol)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(step.color)
+                        .frame(width: 34, height: 34)
+                        .background(step.color.opacity(0.18), in: .circle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.title).foregroundStyle(.primary)
+                        if let detail = step.detail, !detail.isEmpty {
+                            Text(detail).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
-                Spacer()
-                Button {
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            // Deleting takes a deliberate swipe, so it can't be hit by accident.
+            .swipeActions(edge: .trailing) {
+                Button("Remove", role: .destructive) {
                     withAnimation { onRemove(step) }
-                } label: {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.red)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove step")
+            }
+            .accessibilityHint("Edit this step")
+        }
+    }
+}
+
+/// "Add Step": pick a light, device, the thermostat or music that isn't in the scene yet.
+struct AddStepButton: View {
+    @Environment(HomeStore.self) private var home
+    @Environment(AppSettings.self) private var settings
+    @Binding var scene: CustomScene
+    /// Called with the new step so its editor can open.
+    var onAdded: (SceneStep) -> Void
+
+    private var lights: [Light] {
+        home.lights.filter { light in !scene.lights.contains { $0.key == light.key } }
+    }
+    private var devices: [Device] {
+        home.devices.filter { device in device.isControllable && !(scene.devices ?? []).contains { $0.key == device.key } }
+    }
+
+    var body: some View {
+        Menu {
+            if !lights.isEmpty {
+                Menu {
+                    ForEach(lights) { light in
+                        Button("\(light.name) · \(light.roomName)") {
+                            var setting = light.currentSetting
+                            if !setting.on {
+                                setting = LightSetting(key: light.key, on: true, brightness: light.brightness.map { _ in 100 })
+                            }
+                            scene.lights.append(setting)
+                            added("light-\(light.key)")
+                        }
+                    }
+                } label: { Label("Light", systemImage: "lightbulb.fill") }
+            }
+            if !devices.isEmpty {
+                Menu {
+                    ForEach(devices) { device in
+                        Button("\(device.name) · \(device.roomName)") {
+                            scene.devices = (scene.devices ?? []) + [device.currentSetting]
+                            added("device-\(device.key)")
+                        }
+                    }
+                } label: { Label("Lock, Door or Device", systemImage: "lock.fill") }
+            }
+            if scene.thermostat == nil, let thermostat = home.thermostats.first {
+                Button {
+                    scene.thermostat = ThermostatSetting(mode: thermostat.mode.rawValue,
+                                                         targetC: thermostat.mode == .off ? nil : thermostat.targetC)
+                    added("thermostat")
+                } label: { Label("Thermostat", systemImage: "thermometer.medium") }
+            }
+            if scene.music == .none {
+                Button {
+                    scene.music = .play
+                    added("music")
+                } label: { Label("Music", systemImage: "music.note") }
+            }
+        } label: {
+            Label("Add Step", systemImage: "plus.circle.fill")
+        }
+    }
+
+    private func added(_ id: String) {
+        Feedback.tap()
+        // Open the editor for what was just added, once the menu has closed.
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            if let step = SceneStep.steps(for: scene, unit: settings.prefs, home: home).first(where: { $0.id == id }) {
+                onAdded(step)
             }
         }
     }
@@ -472,6 +551,7 @@ struct RecordingReviewView: View {
     @Environment(SceneRecorder.self) private var recorder
     @Environment(\.dismiss) private var dismiss
     @State var review: SceneRecorder.Review
+    @State private var editing: SceneStep?
 
     var body: some View {
         let steps = SceneStep.steps(for: review.scene, unit: settings.prefs, home: home)
@@ -482,12 +562,13 @@ struct RecordingReviewView: View {
                         Label("Nothing was changed while recording.", systemImage: "exclamationmark.circle")
                             .foregroundStyle(.secondary)
                     } else {
-                        SceneStepList(steps: steps) { SceneStep.remove($0, from: &review.scene) }
+                        SceneStepList(steps: steps, onEdit: { editing = $0 }) { SceneStep.remove($0, from: &review.scene) }
                     }
+                    AddStepButton(scene: $review.scene) { editing = $0 }
                 } header: {
                     Text("When tapped, \(review.name) will")
                 } footer: {
-                    Text("Remove anything you don't want, then save.")
+                    Text("Tap a step to change it. Swipe left on a step to remove it. Then save.")
                 }
 
                 Section {
@@ -502,6 +583,9 @@ struct RecordingReviewView: View {
                 }
             }
             .navigationTitle("Review")
+            .sheet(item: $editing) { step in
+                StepEditor(step: step, scene: $review.scene)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -592,6 +676,7 @@ struct SceneButtonSetup: View {
     let buttonID: UUID
     /// Typed locally so saving each keystroke can't drop letters mid-word.
     @State private var name = ""
+    @State private var editingStep: SceneStep?
 
     private var button: SceneButton? {
         settings.sceneButtons(home: home).first { $0.id == buttonID }
@@ -702,7 +787,23 @@ struct SceneButtonSetup: View {
                 }
             }
             .navigationTitle(button.name.isEmpty ? "New Button" : button.name)
+            .sheet(item: $editingStep) { step in
+                StepEditor(step: step, scene: customScene)
+            }
         }
+    }
+
+    /// The button's custom steps, editable.
+    private var customScene: Binding<CustomScene> {
+        Binding(
+            get: {
+                if case .custom(let scene) = settings.sceneButtons(home: home).first(where: { $0.id == buttonID })?.action {
+                    return scene
+                }
+                return CustomScene()
+            },
+            set: { scene in edit { $0.action = .custom(scene) } }
+        )
     }
 
     @ViewBuilder
@@ -716,18 +817,22 @@ struct SceneButtonSetup: View {
                     recordButton(button, title: "Start Recording")
                 }
                 .padding(.vertical, 6)
+                AddStepButton(scene: customScene) { editingStep = $0 }
             } else {
-                SceneStepList(steps: steps) { step in
+                SceneStepList(steps: steps, onEdit: { editingStep = $0 }) { step in
                     edit {
                         guard case .custom(var scene) = $0.action else { return }
                         SceneStep.remove(step, from: &scene)
                         $0.action = .custom(scene)
                     }
                 }
+                AddStepButton(scene: customScene) { editingStep = $0 }
                 recordButton(button, title: "Record Again")
             }
         } header: {
             StepHeader(number: 3, title: steps.isEmpty ? "Record it" : "When tapped, it will")
+        } footer: {
+            if !steps.isEmpty { Text("Tap a step to change it. Swipe left on a step to remove it.") }
         }
     }
 

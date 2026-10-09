@@ -33,6 +33,10 @@ struct StatusLine: View {
             }
         }
 
+        if let error = home.writeError {
+            alerts.insert(Item(text: error, symbol: "exclamationmark.triangle.fill", alert: true), at: 0)
+        }
+
         var info: [Item] = []
         let on = home.lights.filter { $0.isOn && $0.isReachable }.count
         info.append(Item(text: on == 0 ? "All lights off" : on == 1 ? "1 light on" : "\(on) lights on"))

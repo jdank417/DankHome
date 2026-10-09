@@ -9,6 +9,8 @@ import SwiftUI
 /// when the home has any. Shows up to two rows; anything more goes behind "More".
 struct DevicesRow: View {
     @Environment(HomeStore.self) private var home
+    @Environment(AppSettings.self) private var settings
+
     /// Width of the column the row sits in.
     var width: CGFloat
     @State private var showAll = false
@@ -19,7 +21,7 @@ struct DevicesRow: View {
     private static let minTileWidth: CGFloat = 150
 
     var body: some View {
-        let devices = home.visibleDevices
+        let devices = GridReorder.sorted(home.visibleDevices, by: settings.prefs.deviceOrder, key: \.key)
         if !devices.isEmpty {
             let columns = min(devices.count, max(1, Int((width + Metrics.gap) / (Self.minTileWidth + Metrics.gap))))
             let rows = min(2, (devices.count + columns - 1) / columns)

@@ -65,8 +65,11 @@ struct Preferences: Codable, Equatable {
     var demoMode = false
     var clickSounds = false
     var confirmAllOff = true
-    /// Lights shown first, as "Room|Name".
+    /// Lights shown first, as "Room|Name". Replaced by `lightOrder`; read once to migrate.
     var pinnedLights: [String] = []
+    /// The order of light and device tiles on the dashboard, as "Room|Name".
+    var lightOrder: [String] = []
+    var deviceOrder: [String] = []
     /// nil mirrors the Home app's scenes.
     var sceneButtons: [SceneButton]?
 

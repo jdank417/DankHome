@@ -238,6 +238,7 @@ struct DashboardView: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: Metrics.headerHeight, height: Metrics.headerHeight)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)

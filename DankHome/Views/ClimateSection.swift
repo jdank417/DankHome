@@ -142,11 +142,6 @@ struct ThermostatCard: View {
     var thermostat: Thermostat
     var dialSize: CGFloat = 170
 
-    private var step: Double {
-        // 1°F ≈ 0.5°C, so both units move one displayed degree per tap.
-        settings.prefs.temperatureUnit == .fahrenheit ? 5.0 / 9.0 : 0.5
-    }
-
     var body: some View {
         let prefs = settings.prefs
         VStack(alignment: .leading, spacing: Metrics.inner) {
@@ -162,9 +157,9 @@ struct ThermostatCard: View {
 
             Spacer(minLength: 0)
             HStack(spacing: Metrics.chipGap) {
-                adjustButton("minus") { home.setTarget(thermostat.targetC - step, for: thermostat.id) }
+                adjustButton("minus") { home.nudgeTarget(by: -1, unit: settings.prefs.temperatureUnit, for: thermostat.id) }
                 dial(prefs)
-                adjustButton("plus") { home.setTarget(thermostat.targetC + step, for: thermostat.id) }
+                adjustButton("plus") { home.nudgeTarget(by: 1, unit: settings.prefs.temperatureUnit, for: thermostat.id) }
             }
             .frame(maxWidth: .infinity)
             .disabled(thermostat.mode == .off)
@@ -184,6 +179,7 @@ struct ThermostatCard: View {
                             .foregroundStyle(selected ? .black : .white)
                             .frame(maxWidth: .infinity)
                             .frame(height: Metrics.headerHeight)
+                            .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .glassEffect(selected ? .regular.tint(mode == .off ? .white : thermostat.color).interactive()
@@ -228,7 +224,8 @@ struct ThermostatCard: View {
     }
 
     private var statusText: String {
-        switch (thermostat.mode, thermostat.activity) {
+        if thermostat.isSending, thermostat.mode != .off { return "Setting…" }
+        return switch (thermostat.mode, thermostat.activity) {
         case (.off, _): "Off"
         case (_, .heating): "Heating"
         case (_, .cooling): "Cooling"
@@ -245,6 +242,8 @@ struct ThermostatCard: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: Metrics.headerHeight + 4, height: Metrics.headerHeight + 4)
+                // The whole circle is the target, not just the thin "−" stroke.
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)

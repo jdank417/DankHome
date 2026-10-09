@@ -119,14 +119,13 @@ struct LightsGrid: View {
     @State private var detailLight: Light?
     @State private var confirmAllOff = false
 
-    /// Pinned lights first, in the order they were pinned.
+    /// The saved arrangement (older versions pinned lights instead).
+    private var savedOrder: [String] {
+        settings.prefs.lightOrder.isEmpty ? settings.prefs.pinnedLights : settings.prefs.lightOrder
+    }
+
     private var orderedLights: [Light] {
-        let pinned = settings.prefs.pinnedLights
-        return home.visibleLights.sorted { a, b in
-            let ia = pinned.firstIndex(of: a.key) ?? .max
-            let ib = pinned.firstIndex(of: b.key) ?? .max
-            return ia < ib
-        }
+        GridReorder.sorted(home.visibleLights, by: savedOrder, key: \.key)
     }
 
     private func setAll(on: Bool) {
@@ -175,8 +174,7 @@ struct LightsGrid: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: spacing), count: fit.columns),
                               spacing: spacing) {
                         ForEach(orderedLights) { light in
-                            LightTile(light: light, showsRoom: home.selectedRoom == nil, height: fit.height,
-                                      isPinned: settings.prefs.pinnedLights.contains(light.key)) {
+                            LightTile(light: light, showsRoom: home.selectedRoom == nil, height: fit.height) {
                                 detailLight = light
                             }
                         }
@@ -186,7 +184,7 @@ struct LightsGrid: View {
         }
         .sheet(item: $detailLight) { light in
             LightDetailView(lightID: light.id)
-                .presentationDetents([.large])
+                .presentationSizing(.page)
         }
         .onChange(of: idle.isSleeping) { _, sleeping in
             if sleeping { detailLight = nil }
@@ -223,7 +221,6 @@ struct LightTile: View {
     var light: Light
     var showsRoom: Bool
     var height: CGFloat
-    var isPinned = false
     var onLongPress: () -> Void
 
     @State private var dragStart: Double?
@@ -333,11 +330,6 @@ struct LightTile: View {
     }
 
     @ViewBuilder private var warning: some View {
-        if isPinned, light.isReachable {
-            Image(systemName: "pin.fill")
-                .font(.caption2)
-                .opacity(0.5)
-        }
         if !light.isReachable {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.footnote)
@@ -378,6 +370,8 @@ struct LightTile: View {
     }
 }
 
+/// Brightness, a color wheel and quick colors for one light. Sizes itself to the sheet:
+/// three columns when wide, stacked when tall — nothing is ever cut off.
 struct LightDetailView: View {
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
@@ -393,102 +387,165 @@ struct LightDetailView: View {
 
     var body: some View {
         if let light = home.lights.first(where: { $0.id == lightID }) {
-            VStack(spacing: 32) {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(light.name).font(.largeTitle.bold())
-                        Text(light.roomName).font(.title3).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    let pinned = settings.prefs.pinnedLights.contains(light.key)
-                    Button {
-                        Feedback.tap()
-                        if pinned {
-                            settings.prefs.pinnedLights.removeAll { $0 == light.key }
-                        } else {
-                            settings.prefs.pinnedLights.append(light.key)
-                        }
-                    } label: {
-                        Label(pinned ? "Pinned" : "Pin to Top", systemImage: pinned ? "pin.fill" : "pin")
-                    }
-                    .buttonStyle(.glass)
-                    Button("Done") { dismiss() }
-                        .buttonStyle(.glass)
-                }
-
-                Spacer()
-
-                if light.brightness != nil {
-                    brightnessSlider(light)
-                } else {
-                    Button {
-                        home.toggle(light)
-                    } label: {
-                        Image(systemName: "power")
-                            .font(.system(size: 64, weight: .semibold))
-                            .frame(width: 180, height: 180)
-                    }
-                    .buttonStyle(.glass)
-                    .tint(light.isOn ? light.tint : .gray)
-                }
-
-                Text(light.isOn ? "\(Int(light.brightness ?? 100))%" : "Off")
-                    .font(.system(size: 44, weight: .light, design: .rounded))
-                    .contentTransition(.numericText())
-
-                if light.colorTemperature != nil || light.supportsColor {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("White").font(.headline).foregroundStyle(.secondary)
-                        HStack(spacing: 14) {
-                            ForEach(Self.whites, id: \.self) { kelvin in
-                                Button {
-                                    withAnimation { home.setWhite(kelvin: kelvin, for: light.id) }
-                                } label: {
-                                    VStack(spacing: 6) {
-                                        Circle()
-                                            .fill(Light.white(kelvin: kelvin))
-                                            .frame(width: 52, height: 52)
-                                            .overlay(Circle().stroke(.white, lineWidth: isSelectedWhite(kelvin, light) ? 4 : 0).padding(-5))
-                                        Text(verbatim: "\(Int(kelvin))K").font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+            VStack(spacing: 24) {
+                header(light)
+                GeometryReader { proxy in
+                    let size = proxy.size
+                    if size.width > size.height * 1.2 {
+                        wideLayout(light, size: size)
+                    } else {
+                        tallLayout(light, size: size)
                     }
                 }
-
-                if light.supportsColor {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Color").font(.headline).foregroundStyle(.secondary)
-                        HStack(spacing: 14) {
-                            ForEach(Self.colors.indices, id: \.self) { index in
-                                let swatch = Self.colors[index]
-                                Button {
-                                    withAnimation { home.setColor(hue: swatch.hue, saturation: swatch.saturation, for: light.id) }
-                                } label: {
-                                    Circle()
-                                        .fill(Color(hue: swatch.hue / 360, saturation: swatch.saturation / 100, brightness: 1))
-                                        .frame(width: 52, height: 52)
-                                        .overlay(Circle().stroke(.white, lineWidth: isSelected(swatch, light) ? 4 : 0).padding(-5))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            ColorPicker("Any Color", selection: Binding(
-                                get: { light.tint },
-                                set: { home.setColor($0, for: light.id) }
-                            ), supportsOpacity: false)
-                            .labelsHidden()
-                            .scaleEffect(1.5)
-                            .padding(.leading, 8)
-                        }
-                    }
-                }
-                Spacer()
             }
-            .padding(40)
+            .padding(32)
             .animation(.snappy, value: light)
         }
+    }
+
+    // MARK: Layouts
+
+    /// Landscape: brightness · wheel · swatches.
+    private func wideLayout(_ light: Light, size: CGSize) -> some View {
+        let control = min(size.height - 56, (size.width - 64) * 0.42)
+        return HStack(alignment: .center, spacing: 32) {
+            brightnessColumn(light, height: control)
+            if light.supportsColor {
+                ColorWheel(hue: light.hue ?? 0, saturation: light.saturation ?? 0,
+                           showsThumb: !light.usesWhite && light.isOn) { hue, saturation in
+                    home.setColor(hue: hue, saturation: saturation, for: light.id)
+                }
+                .frame(width: control, height: control)
+            }
+            swatches(light)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    /// Portrait: brightness and wheel side by side, swatches underneath.
+    private func tallLayout(_ light: Light, size: CGSize) -> some View {
+        let control = min(size.height * 0.5, (size.width - 32) * 0.55)
+        return VStack(spacing: 28) {
+            HStack(alignment: .center, spacing: 32) {
+                brightnessColumn(light, height: control)
+                if light.supportsColor {
+                    ColorWheel(hue: light.hue ?? 0, saturation: light.saturation ?? 0,
+                               showsThumb: !light.usesWhite && light.isOn) { hue, saturation in
+                        home.setColor(hue: hue, saturation: saturation, for: light.id)
+                    }
+                    .frame(width: control, height: control)
+                }
+            }
+            swatches(light)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    // MARK: Pieces
+
+    private func header(_ light: Light) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(light.name).font(.largeTitle.bold())
+                Text(light.roomName).font(.title3).foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            Button {
+                Feedback.tap()
+                let saved = settings.prefs.lightOrder.isEmpty ? settings.prefs.pinnedLights : settings.prefs.lightOrder
+                var order = GridReorder.sorted(home.lights, by: saved, key: \.key).map(\.key)
+                order.removeAll { $0 == light.key }
+                order.insert(light.key, at: 0)
+                withAnimation(.snappy) { settings.prefs.lightOrder = order }
+            } label: {
+                Label("Move to Top", systemImage: "arrow.up.to.line")
+                    .fixedSize()
+            }
+            .buttonStyle(.glass)
+            Button("Done") { dismiss() }
+                .buttonStyle(.glass)
+                .fixedSize()
+        }
+    }
+
+    private func brightnessColumn(_ light: Light, height: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            if light.brightness != nil {
+                brightnessSlider(light, height: height - 52)
+            } else {
+                Button {
+                    home.toggle(light)
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 56, weight: .semibold))
+                        .frame(width: height * 0.4, height: height * 0.4)
+                }
+                .buttonStyle(.glass)
+                .tint(light.isOn ? light.tint : .gray)
+            }
+            Text(light.isOn ? "\(Int(light.brightness ?? 100))%" : "Off")
+                .font(.system(size: 32, weight: .light, design: .rounded))
+                .contentTransition(.numericText())
+                .frame(height: 40)
+        }
+    }
+
+    /// Whites and favorite colors as grids that wrap to the space they get.
+    @ViewBuilder
+    private func swatches(_ light: Light) -> some View {
+        let grid = [GridItem(.adaptive(minimum: 52, maximum: 64), spacing: 14)]
+        VStack(alignment: .leading, spacing: 20) {
+            if light.colorTemperature != nil || light.supportsColor {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("White").font(.headline).foregroundStyle(.secondary)
+                    LazyVGrid(columns: grid, spacing: 14) {
+                        ForEach(Self.whites, id: \.self) { kelvin in
+                            Button {
+                                Feedback.tap()
+                                withAnimation { home.setWhite(kelvin: kelvin, for: light.id) }
+                            } label: {
+                                VStack(spacing: 4) {
+                                    swatchCircle(Light.white(kelvin: kelvin), selected: isSelectedWhite(kelvin, light))
+                                    Text(verbatim: "\(Int(kelvin))K").font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            if light.supportsColor {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Favorites").font(.headline).foregroundStyle(.secondary)
+                    LazyVGrid(columns: grid, spacing: 14) {
+                        ForEach(Self.colors.indices, id: \.self) { index in
+                            let swatch = Self.colors[index]
+                            Button {
+                                Feedback.tap()
+                                withAnimation { home.setColor(hue: swatch.hue, saturation: swatch.saturation, for: light.id) }
+                            } label: {
+                                swatchCircle(Color(hue: swatch.hue / 360, saturation: swatch.saturation / 100, brightness: 1),
+                                             selected: isSelected(swatch, light))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func swatchCircle(_ color: Color, selected: Bool) -> some View {
+        Circle()
+            .fill(color)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 52)
+            .overlay(Circle().stroke(.white, lineWidth: selected ? 3 : 0).padding(-4))
+            .padding(4)
     }
 
     private func isSelected(_ swatch: (hue: Double, saturation: Double), _ light: Light) -> Bool {
@@ -500,21 +557,20 @@ struct LightDetailView: View {
         return abs(1_000_000 / mireds - kelvin) < 150
     }
 
-    private func brightnessSlider(_ light: Light) -> some View {
+    private func brightnessSlider(_ light: Light, height: CGFloat) -> some View {
         let level = light.isOn ? (light.brightness ?? 100) / 100 : 0
-        let height: CGFloat = 380
         return ZStack(alignment: .bottom) {
             Rectangle().fill(.white.opacity(0.12))
             Rectangle()
                 .fill(light.tint.gradient)
                 .frame(height: height * level)
             Image(systemName: light.isOn ? "lightbulb.fill" : "lightbulb")
-                .font(.system(size: 34))
+                .font(.system(size: 30))
                 .foregroundStyle(light.isOn ? .black.opacity(0.6) : .white.opacity(0.6))
-                .padding(.bottom, 28)
+                .padding(.bottom, 24)
         }
-        .frame(width: 150, height: height)
-        .clipShape(.rect(cornerRadius: 44))
+        .frame(width: min(140, height * 0.42), height: height)
+        .clipShape(.rect(cornerRadius: 40))
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
@@ -553,5 +609,65 @@ struct ScenesRow: View {
                 }
             }
         }
+    }
+}
+
+/// Hue around the edge, saturation toward the center. Drag anywhere to pick any color.
+struct ColorWheel: View {
+    var hue: Double           // 0…360
+    var saturation: Double    // 0…100
+    var showsThumb: Bool
+    var onChange: (Double, Double) -> Void
+
+    @State private var dragging: (hue: Double, saturation: Double)?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let radius = size / 2
+            let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            let shown = dragging ?? (hue, saturation)
+            let angle = shown.hue * .pi / 180
+            let distance = radius * shown.saturation / 100
+            let thumb = CGPoint(x: center.x + cos(angle) * distance, y: center.y + sin(angle) * distance)
+
+            ZStack {
+                Circle()
+                    .fill(AngularGradient(colors: stride(from: 0.0, through: 360, by: 30).map {
+                        Color(hue: $0 / 360, saturation: 1, brightness: 1)
+                    }, center: .center))
+                Circle()
+                    .fill(RadialGradient(colors: [.white, .white.opacity(0)], center: .center,
+                                         startRadius: 0, endRadius: radius))
+                if showsThumb || dragging != nil {
+                    Circle()
+                        .fill(Color(hue: shown.hue / 360, saturation: shown.saturation / 100, brightness: 1))
+                        .frame(width: dragging == nil ? 34 : 46, height: dragging == nil ? 34 : 46)
+                        .overlay(Circle().stroke(.white, lineWidth: 4))
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                        .position(thumb)
+                        .animation(.spring(response: 0.25), value: dragging == nil)
+                }
+            }
+            .frame(width: size, height: size)
+            .position(center)
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let dx = value.location.x - center.x
+                        let dy = value.location.y - center.y
+                        var degrees = atan2(dy, dx) * 180 / .pi
+                        if degrees < 0 { degrees += 360 }
+                        let sat = (hypot(dx, dy) / radius * 100).clamped(to: 0...100)
+                        let picked = (hue: Double(degrees.rounded()), saturation: Double(sat.rounded()))
+                        if dragging == nil { Feedback.tap() }
+                        dragging = picked
+                        onChange(picked.0, picked.1)
+                    }
+                    .onEnded { _ in dragging = nil }
+            )
+        }
+        .accessibilityLabel("Color wheel")
     }
 }

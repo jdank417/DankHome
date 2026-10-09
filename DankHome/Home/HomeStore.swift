@@ -61,7 +61,14 @@ struct Thermostat: Identifiable, Equatable {
     var humidity: Double?
     var minC: Double = 10
     var maxC: Double = 32
+    /// Smallest change the thermostat accepts, in °C.
+    var stepC: Double = 0.5
+    /// In Auto, thermostats follow this heat/cool range instead of the target.
+    var heatC: Double?
+    var coolC: Double?
     var isReachable: Bool
+    /// A new target is waiting to be sent, or sent but not yet confirmed by the thermostat.
+    var isSending = false
 
     var color: Color {
         switch (mode, activity) {
@@ -203,6 +210,19 @@ final class HomeStore: NSObject {
     @ObservationIgnored private var services: [UUID: HMService] = [:]
     @ObservationIgnored private var actionSets: [UUID: HMActionSet] = [:]
     @ObservationIgnored private var pendingWrites: [UUID: Task<Void, Never>] = [:]
+    /// Writes still on their way to an accessory, and when the last one finished. Incoming
+    /// values for those characteristics are ignored meanwhile so the UI doesn't jump back.
+    @ObservationIgnored private var writesInFlight: [String: Int] = [:]
+    @ObservationIgnored private var lastWrite: [String: Date] = [:]
+    @ObservationIgnored private var lastSent: [String: Date] = [:]
+    @ObservationIgnored private var trailingSends: [String: Task<Void, Never>] = [:]
+    /// The target the person chose, held until the thermostat confirms it (or 15 s pass),
+    /// so slow cloud thermostats can't bounce the dial back to an older value.
+    @ObservationIgnored private var heldTargets: [UUID: (value: Double, until: Date)] = [:]
+
+    /// A short message when an accessory didn't accept a change.
+    private(set) var writeError: String?
+    @ObservationIgnored private var errorTask: Task<Void, Never>?
     /// While a scene button is being recorded, every light or thermostat the person touches.
     @ObservationIgnored var touched: Set<UUID>?
 
@@ -228,16 +248,27 @@ final class HomeStore: NSObject {
     func setBrightness(_ value: Double, for id: UUID, commit: Bool) {
         touched?.insert(id)
         let value = value.rounded().clamped(to: 0...100)
+        let wasOn = lights.first { $0.id == id }?.isOn ?? false
         update(id) {
             $0.brightness = value
             $0.isOn = value > 0
         }
-        guard commit else { return }
-        if value > 0 {
-            write(Int(value), type: HMCharacteristicTypeBrightness, to: id)
-            write(true, type: HMCharacteristicTypePowerState, to: id)
+        // While dragging, send a few updates a second so the real light follows the finger;
+        // the final value always goes out when the drag ends.
+        let send = { [weak self] in
+            guard let self else { return }
+            if value > 0 {
+                self.write(Int(value), type: HMCharacteristicTypeBrightness, to: id)
+                if !wasOn || commit { self.write(true, type: HMCharacteristicTypePowerState, to: id) }
+            } else {
+                self.write(false, type: HMCharacteristicTypePowerState, to: id)
+            }
+        }
+        if commit {
+            trailingSends["\(id)-brightness"]?.cancel()
+            send()
         } else {
-            write(false, type: HMCharacteristicTypePowerState, to: id)
+            throttle("\(id)-brightness", action: send)
         }
     }
 
@@ -249,9 +280,9 @@ final class HomeStore: NSObject {
             $0.usesWhite = false
             $0.isOn = true
         }
-        debounce(id) { [weak self] in
-            self?.write(hue, type: HMCharacteristicTypeHue, to: id)
-            self?.write(saturation, type: HMCharacteristicTypeSaturation, to: id)
+        throttle("\(id)-color") { [weak self] in
+            self?.write(Float(hue), type: HMCharacteristicTypeHue, to: id)
+            self?.write(Float(saturation), type: HMCharacteristicTypeSaturation, to: id)
             self?.write(true, type: HMCharacteristicTypePowerState, to: id)
         }
     }
@@ -344,11 +375,66 @@ final class HomeStore: NSObject {
     func setTarget(_ celsius: Double, for id: UUID) {
         touched?.insert(id)
         guard let thermostat = thermostats.first(where: { $0.id == id }) else { return }
-        let value = ((celsius * 2).rounded() / 2).clamped(to: thermostat.minC...thermostat.maxC)
-        updateThermostat(id) { $0.targetC = value }
-        // Wait for the taps to settle before talking to the thermostat.
-        debounce(id) { [weak self] in
-            self?.write(value, type: HMCharacteristicTypeTargetTemperature, to: id)
+        let step = thermostat.stepC > 0 ? thermostat.stepC : 0.5
+        let value = ((celsius / step).rounded() * step).clamped(to: thermostat.minC...thermostat.maxC)
+        let delta = value - thermostat.targetC
+        updateThermostat(id) {
+            $0.targetC = value
+            // In Auto, move the heat/cool range with the target so the change takes effect.
+            if $0.mode == .auto {
+                $0.heatC = $0.heatC.map { $0 + delta }
+                $0.coolC = $0.coolC.map { $0 + delta }
+            }
+        }
+        updateThermostat(id) { $0.isSending = true }
+        heldTargets[id] = (value, .now.addingTimeInterval(60))
+        // Tap as much as you like; only the final number is sent, once tapping stops.
+        debounce(id, after: 1.5) { [weak self] in
+            guard let self, let updated = self.thermostats.first(where: { $0.id == id }) else { return }
+            let deadline = Date.now.addingTimeInterval(15)
+            self.heldTargets[id] = (value, deadline)
+            self.write(Float(value), type: HMCharacteristicTypeTargetTemperature, to: id)
+            if updated.mode == .auto {
+                if let heat = updated.heatC { self.write(Float(heat), type: HMCharacteristicTypeHeatingThreshold, to: id) }
+                if let cool = updated.coolC { self.write(Float(cool), type: HMCharacteristicTypeCoolingThreshold, to: id) }
+            }
+            // Never confirmed? After 15 s, show whatever the thermostat really has.
+            Task {
+                try? await Task.sleep(for: .seconds(15))
+                guard self.heldTargets[id]?.until == deadline else { return }
+                self.heldTargets[id] = nil
+                self.updateThermostat(id) { $0.isSending = false }
+                if let characteristic = self.services[id]?.characteristic(HMCharacteristicTypeTargetTemperature) {
+                    try? await characteristic.readValue()
+                    self.apply(characteristic, to: id)
+                }
+            }
+        }
+    }
+
+    /// While a target is held, only a report of that same value gets through (and confirms it).
+    private func acceptsTarget(_ value: Double, for id: UUID) -> Bool {
+        guard let held = heldTargets[id] else { return true }
+        if Date.now > held.until {
+            heldTargets[id] = nil
+            updateThermostat(id) { $0.isSending = false }
+            return true
+        }
+        guard abs(value - held.value) < 0.06 else { return false }
+        heldTargets[id] = nil
+        updateThermostat(id) { $0.isSending = false }
+        return true
+    }
+
+    /// One displayed degree up or down, in the person's units (°F moves by whole °F).
+    func nudgeTarget(by degrees: Int, unit: TemperatureUnit, for id: UUID) {
+        guard let thermostat = thermostats.first(where: { $0.id == id }) else { return }
+        switch unit {
+        case .fahrenheit:
+            let current = (thermostat.targetC * 9 / 5 + 32).rounded()
+            setTarget((current + Double(degrees) - 32) * 5 / 9, for: id)
+        case .celsius:
+            setTarget(thermostat.targetC + Double(degrees) * 0.5, for: id)
         }
     }
 
@@ -367,10 +453,27 @@ final class HomeStore: NSObject {
         write(mode.rawValue, type: HMCharacteristicTypeTargetHeatingCooling, to: id)
     }
 
-    private func debounce(_ id: UUID, action: @escaping () -> Void) {
+    /// Sends at most every `interval`, always delivering the last value.
+    private func throttle(_ key: String, interval: Double = 0.2, action: @escaping () -> Void) {
+        trailingSends[key]?.cancel()
+        let elapsed = lastSent[key].map { Date.now.timeIntervalSince($0) } ?? .infinity
+        if elapsed >= interval {
+            lastSent[key] = .now
+            action()
+        } else {
+            trailingSends[key] = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(interval - elapsed))
+                guard !Task.isCancelled else { return }
+                self?.lastSent[key] = .now
+                action()
+            }
+        }
+    }
+
+    private func debounce(_ id: UUID, after seconds: Double = 0.4, action: @escaping () -> Void) {
         pendingWrites[id]?.cancel()
         pendingWrites[id] = Task {
-            try? await Task.sleep(for: .milliseconds(500))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             action()
         }
@@ -448,11 +551,15 @@ final class HomeStore: NSObject {
         Task { await refreshValues() }
     }
 
+    /// Reads everything at once (not one by one) so the dashboard settles quickly.
     private func refreshValues() async {
         for (id, service) in services {
             for characteristic in service.characteristics where Self.trackedTypes.contains(characteristic.characteristicType) {
-                try? await characteristic.readValue()
-                apply(characteristic, to: id)
+                // One task each, so all the reads happen at the same time.
+                Task {
+                    try? await characteristic.readValue()
+                    apply(characteristic, to: id)
+                }
             }
             let reachable = service.accessory?.isReachable ?? false
             update(id) { $0.isReachable = reachable }
@@ -467,6 +574,7 @@ final class HomeStore: NSObject {
         HMCharacteristicTypeCurrentTemperature, HMCharacteristicTypeTargetTemperature,
         HMCharacteristicTypeCurrentHeatingCooling, HMCharacteristicTypeTargetHeatingCooling,
         HMCharacteristicTypeCurrentRelativeHumidity,
+        HMCharacteristicTypeHeatingThreshold, HMCharacteristicTypeCoolingThreshold,
         HMCharacteristicTypeCurrentLockMechanismState, HMCharacteristicTypeTargetLockMechanismState,
         HMCharacteristicTypeCurrentDoorState, HMCharacteristicTypeTargetDoorState, HMCharacteristicTypeObstructionDetected,
         HMCharacteristicTypeCurrentPosition, HMCharacteristicTypeActive, HMCharacteristicTypeRotationSpeed,
@@ -514,6 +622,9 @@ final class HomeStore: NSObject {
             humidity: service.number(HMCharacteristicTypeCurrentRelativeHumidity),
             minC: target?.metadata?.minimumValue?.doubleValue ?? 10,
             maxC: target?.metadata?.maximumValue?.doubleValue ?? 32,
+            stepC: target?.metadata?.stepValue?.doubleValue ?? 0.5,
+            heatC: service.number(HMCharacteristicTypeHeatingThreshold),
+            coolC: service.number(HMCharacteristicTypeCoolingThreshold),
             isReachable: accessory.isReachable
         )
     }
@@ -558,6 +669,7 @@ final class HomeStore: NSObject {
     }
 
     private func apply(_ characteristic: HMCharacteristic, to id: UUID) {
+        guard !isSettling(characteristic, id: id) else { return }
         updateDevice(id) { Self.apply(characteristic, to: &$0) }
         guard let number = characteristic.value as? NSNumber else { return }
         let value = number.doubleValue
@@ -571,13 +683,18 @@ final class HomeStore: NSObject {
             default: break
             }
         }
+        let acceptTarget = characteristic.characteristicType == HMCharacteristicTypeTargetTemperature
+            && thermostats.contains(where: { $0.id == id }) ? acceptsTarget(value, for: id) : true
         updateThermostat(id) { thermostat in
             switch characteristic.characteristicType {
             case HMCharacteristicTypeCurrentTemperature: thermostat.currentC = value
-            case HMCharacteristicTypeTargetTemperature: thermostat.targetC = value
+            case HMCharacteristicTypeTargetTemperature:
+                if acceptTarget { thermostat.targetC = value }
             case HMCharacteristicTypeTargetHeatingCooling: thermostat.mode = .init(rawValue: Int(value)) ?? .off
             case HMCharacteristicTypeCurrentHeatingCooling: thermostat.activity = .init(rawValue: Int(value)) ?? .idle
             case HMCharacteristicTypeCurrentRelativeHumidity: thermostat.humidity = value
+            case HMCharacteristicTypeHeatingThreshold: if heldTargets[id] == nil { thermostat.heatC = value }
+            case HMCharacteristicTypeCoolingThreshold: if heldTargets[id] == nil { thermostat.coolC = value }
             default: break
             }
         }
@@ -599,7 +716,54 @@ final class HomeStore: NSObject {
     }
 
     private func write(_ value: Any, type: String, to id: UUID) {
-        services[id]?.characteristic(type)?.writeValue(value) { _ in }
+        guard let characteristic = services[id]?.characteristic(type) else { return }
+        let key = "\(id)|\(type)"
+        writesInFlight[key, default: 0] += 1
+        Task {
+            var failure: Error?
+            do { try await characteristic.writeValue(value) } catch { failure = error }
+            writesInFlight[key, default: 1] -= 1
+            lastWrite[key] = .now
+            if failure == nil, thermostats.contains(where: { $0.id == id }) {
+                // Some thermostats (ecobee) don't announce their new setting, so check back.
+                try? await Task.sleep(for: .seconds(3))
+                guard writesInFlight[key, default: 0] == 0 else { return }
+                lastWrite[key] = nil
+                try? await characteristic.readValue()
+                apply(characteristic, to: id)
+                return
+            }
+            guard let failure else { return }
+            print("[HomeKit] write \(type) failed:", failure.localizedDescription)
+            let name = lights.first { $0.id == id }?.name
+                ?? thermostats.first { $0.id == id }?.name
+                ?? devices.first { $0.id == id }?.name ?? "A device"
+            showWriteError("\(name) didn't respond")
+            // Show what the accessory really has instead of a value that didn't stick.
+            if writesInFlight[key, default: 0] == 0 {
+                lastWrite[key] = nil
+                try? await characteristic.readValue()
+                apply(characteristic, to: id)
+            }
+        }
+    }
+
+    /// True while our own change to this characteristic is still settling.
+    private func isSettling(_ characteristic: HMCharacteristic, id: UUID) -> Bool {
+        let key = "\(id)|\(characteristic.characteristicType)"
+        if writesInFlight[key, default: 0] > 0 { return true }
+        if let last = lastWrite[key], Date.now.timeIntervalSince(last) < 1.5 { return true }
+        return false
+    }
+
+    private func showWriteError(_ message: String) {
+        writeError = message
+        errorTask?.cancel()
+        errorTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            writeError = nil
+        }
     }
 
     private static func symbol(for actionSet: HMActionSet) -> String {

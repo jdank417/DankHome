@@ -14,6 +14,7 @@ struct QuickCommands {
     let settings: AppSettings
     var automation: AutomationStore?
     var weather: WeatherStore?
+    var app: AppControl?
 
     /// What the instant path managed: the replies for what it did, and whatever is
     /// left for the model ("turn off the kitchen and make it cozy" leaves "make it cozy").
@@ -77,6 +78,7 @@ struct QuickCommands {
     private func single(_ text: String) async -> String? {
         if let reply = timerCommand(text) { return reply }
         if let reply = answer(text) { return reply }
+        if let reply = appCommand(text) { return reply }
 
         let words = text.split(separator: " ").map(String.init)
         guard !words.isEmpty, words.count <= 9, Self.complex.isDisjoint(with: words) else { return nil }

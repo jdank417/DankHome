@@ -26,6 +26,11 @@ final class AssistantStore {
         "Which lights are on?",
         "Turn off the lights in 30 minutes",
         "Every night at 10, run Good Night",
+        "Save this as Movie Night",
+        "Wake me up at 6:30 on weekdays",
+        "Switch to the ocean background",
+        "Turn on adaptive lighting",
+        "Show what's on",
     ]
 
     /// Suggestions that fit the time of day, using the home's own scene names.
@@ -38,12 +43,12 @@ final class AssistantStore {
             list = ["What's the weather today?", "Turn on the kitchen lights", "Open the shades"]
             if let morning = scene(["morning", "bright", "wake"]) { list.insert("Run \(morning)", at: 0) }
         case 11..<17:
-            list = ["Will it rain this afternoon?", "Set the thermostat to 70", "Which lights are on?"]
+            list = ["Will it rain this afternoon?", "Set the thermostat to 70", "Show what's on"]
         case 17..<21:
-            list = ["Make the living room warm white at 40%", "Close the shades", "Will it be cold tonight?"]
+            list = ["Make the living room warm white at 40%", "Save this as Movie Night", "Will it be cold tonight?"]
             if let evening = scene(["movie", "relax", "dinner"]) { list.insert("Run \(evening)", at: 0) }
         default:
-            list = ["Turn off all the lights", "Lock the front door", "Set the thermostat to 66"]
+            list = ["Turn off all the lights and lock the front door", "Wake me up at 6:30 on weekdays", "Night mode"]
             if let night = scene(["night", "sleep", "bed"]) { list.insert("Run \(night)", at: 0) }
         }
         list.append("Which lights are on?")
@@ -72,8 +77,11 @@ final class AssistantStore {
         case control
         /// "is anyone's light still on upstairs?": answered from a snapshot in the prompt.
         case ask
-        /// "every weekday at 7, open the shades": timers and routines.
+        /// "every weekday at 7, open the shades": timers, routines, the wake-up light
+        /// and adaptive lighting.
         case schedule
+        /// "make the background ocean", "save this as Movie Night": the app itself.
+        case app
     }
 
     @ObservationIgnored private var sessions: [Mode: LanguageModelSession] = [:]
@@ -91,10 +99,10 @@ final class AssistantStore {
     private static let turnsPerSession = 4
 
     func configure(home: HomeStore, music: MusicStore, weather: WeatherStore, settings: AppSettings,
-                   automation: AutomationStore) {
+                   automation: AutomationStore, app: AppControl) {
         self.settings = settings
         self.automation = automation
-        quick = QuickCommands(home: home, music: music, settings: settings, automation: automation, weather: weather)
+        quick = QuickCommands(home: home, music: music, settings: settings, automation: automation, weather: weather, app: app)
         tools = [
             .control: [
                 ControlLightsTool(home: home),
@@ -107,18 +115,29 @@ final class AssistantStore {
             .schedule: [
                 TimerTool(automation: automation),
                 RoutineTool(automation: automation),
+                ManageAutomationsTool(app: app),
+                WakeUpLightTool(app: app),
+                AdaptiveLightingTool(app: app),
+            ],
+            .app: [
+                ChangeLookTool(app: app),
+                ChangeDashboardTool(app: app),
+                NightClockTool(app: app),
+                SaveSceneTool(app: app),
+                OpenScreenTool(app: app),
             ],
         ]
         snapshot = {
-            let status = home.assistantStatus(weather: weather, prefs: settings.prefs)
-            guard let scheduled = automation.assistantSummary else { return status }
-            return status + "\n" + scheduled
+            var status = home.assistantStatus(weather: weather, prefs: settings.prefs) + "\n" + app.summary
+            if let scheduled = automation.assistantSummary { status += "\n" + scheduled }
+            return status
         }
     }
 
     /// Loads the model and the instructions ahead of time so the first answer is quick.
     func prewarm() {
         guard unavailableReason == nil else { return }
+        // Commands and questions are the most common; the others warm up on first use.
         session(for: .control).prewarm()
         session(for: .ask).prewarm()
     }
@@ -127,17 +146,35 @@ final class AssistantStore {
     /// so this errs toward control.
     static func mode(for text: String) -> Mode {
         let text = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = { (patterns: [String]) in
+            patterns.contains { text.range(of: $0, options: .regularExpression) != nil }
+        }
+        // Questions first: "when is my alarm?" is answered, not acted on.
+        let questionWords: Set<String> = ["what", "what's", "whats", "which", "who", "when", "where", "why", "how",
+                                          "is", "are", "was", "were", "will", "would", "should", "do", "does", "did", "tell"]
+        let first = text.split(separator: " ").first.map(String.init) ?? ""
+        if text.hasSuffix("?") || questionWords.contains(first) { return .ask }
+        // Changing or removing timers and routines, the wake-up light, adaptive lighting.
+        let automationWords = [
+            "\\bwake (?:me|up)\\b", "\\bwake-up\\b", "\\balarm\\b", "\\badaptive\\b",
+            "\\b(?:cancel|delete|remove|pause|resume|stop|disable)\\b.*\\b(?:timers?|routines?)\\b",
+        ]
+        if matches(automationWords) { return .schedule }
+        let appWords = [
+            "\\btheme\\b", "\\bbackground\\b", "\\bwallpaper\\b", "\\baccent\\b", "\\bfont\\b", "(?<!['’])\\bclock\\b",
+            "\\bnight mode\\b", "\\bscreen ?saver\\b", "\\bthe screen\\b", "\\bsettings\\b", "\\bdashboard\\b",
+            "\\bcelsius\\b", "\\bfahrenheit\\b", "\\bclick sounds?\\b", "\\b24.hour\\b", "\\bsave\\b",
+            "\\bhide\\b", "\\bshow (?:the |all |only |just )", "\\bopen (?:the |my )?(?:settings|automations|routines)\\b",
+            "\\banimated weather\\b",
+        ]
+        if matches(appWords) { return .app }
         let schedule = [
             "\\bevery\\b", "\\bdaily\\b", "\\bweekdays?\\b", "\\bweekends?\\b", "\\btimer\\b", "\\broutine\\b",
             "\\bschedule\\b", "\\bremind", "\\btomorrow\\b", "\\bat (?:sunset|sunrise|noon|midnight|night)\\b",
             "\\bin (?:\\d+|an|a|half an) ?(?:min|mins|minutes?|hours?|hrs?)\\b",
             "\\bat \\d{1,2}(?::\\d{2})? ?(?:am|pm|a\\.m\\.|p\\.m\\.|o.clock)\\b",
         ]
-        if schedule.contains(where: { text.range(of: $0, options: .regularExpression) != nil }) { return .schedule }
-        let questionWords: Set<String> = ["what", "what's", "whats", "which", "who", "when", "where", "why", "how",
-                                          "is", "are", "was", "were", "will", "would", "should", "do", "does", "did", "tell"]
-        let first = text.split(separator: " ").first.map(String.init) ?? ""
-        if text.hasSuffix("?") || questionWords.contains(first) { return .ask }
+        if matches(schedule) { return .schedule }
         return .control
     }
 
@@ -204,7 +241,11 @@ final class AssistantStore {
         guard let remainder = quickResult.remainder else { return instant }
         guard unavailableReason == nil else { return "Couldn't run “\(command)”: Apple Intelligence isn't available." }
         // A throwaway session, so automations don't mix into the conversation.
-        let mode = Self.mode(for: remainder) == .schedule ? Mode.schedule : .control
+        let mode: Mode = switch Self.mode(for: remainder) {
+        case .schedule: .schedule
+        case .app: .app
+        default: .control
+        }
         let session = makeSession(mode)
         do {
             let reply = try await session.respond(to: remainder, options: Self.options).content
@@ -275,7 +316,15 @@ final class AssistantStore {
             You are DankHome, a home assistant. For something to do once after a delay, call \
             setTimer. For something that repeats, like every night or on weekdays, call \
             scheduleRoutine. The command is a short instruction like turn off the kitchen lights. \
+            Use manageAutomations to cancel timers or change routines, wakeUpLight for wake-up \
+            alarms, and adaptiveLighting for lights that follow the sun. \
             It is \(now). Answer in one short sentence.
+            """
+        case .app:
+            """
+            You are DankHome, a smart home app. Use the tools to change the app: its look, the \
+            dashboard, the night clock, saving the current lights as a scene, or opening a \
+            screen. Answer in one short sentence.
             """
         }
         return LanguageModelSession(tools: tools[mode] ?? [], instructions: instructions)

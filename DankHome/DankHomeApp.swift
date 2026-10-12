@@ -19,6 +19,7 @@ struct DankHomeApp: App {
     @State private var assistant = AppStores.shared.assistant
     @State private var recorder = AppStores.shared.recorder
     @State private var automation = AppStores.shared.automation
+    @State private var navigator = AppStores.shared.navigator
 
     static let isPhone = UIDevice.current.userInterfaceIdiom == .phone
 
@@ -46,6 +47,7 @@ struct DankHomeApp: App {
             .environment(assistant)
             .environment(recorder)
             .environment(automation)
+            .environment(navigator)
             .fontDesign(settings.prefs.appFont.design)
             .tint(settings.prefs.accent.color)
             .task { assistant.prewarm() }

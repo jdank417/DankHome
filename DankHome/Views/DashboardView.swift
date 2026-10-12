@@ -17,10 +17,12 @@ struct DashboardView: View {
     @Environment(IdleMonitor.self) private var idle
     @Environment(SceneRecorder.self) private var recorder
     @Environment(WeatherStore.self) private var weather
+    @Environment(AppNavigator.self) private var navigator
     @ObservedObject private var queue = SystemMusicPlayer.shared.queue
     @State private var showSettings = false
     @State private var showAssistant = false
     @State private var showEnergy = false
+    @State private var showAutomations = false
     @State private var talk = PushToTalk()
 
     private var artworkColor: Color {
@@ -91,6 +93,10 @@ struct DashboardView: View {
             EnergyView()
                 .presentationSizing(.form)
         }
+        .sheet(isPresented: $showAutomations) {
+            AutomationsSheet()
+                .presentationSizing(.form)
+        }
         .sheet(item: Bindable(recorder).review) { review in
             RecordingReviewView(review: review)
         }
@@ -103,7 +109,23 @@ struct DashboardView: View {
                 showSettings = false
                 showAssistant = false
                 showEnergy = false
+                showAutomations = false
                 talk.dismiss()
+            }
+        }
+        // The assistant asked for a screen: close the chat, then open it.
+        .onChange(of: navigator.request) { _, screen in
+            guard let screen else { return }
+            navigator.request = nil
+            let wasOpen = showAssistant
+            showAssistant = false
+            Task {
+                if wasOpen { try? await Task.sleep(for: .milliseconds(500)) }
+                switch screen {
+                case .whatsOn: showEnergy = true
+                case .settings: showSettings = true
+                case .automations: showAutomations = true
+                }
             }
         }
     }
@@ -265,4 +287,5 @@ struct DashboardView: View {
         .environment(AssistantStore())
         .environment(SceneRecorder())
         .environment(AutomationStore())
+        .environment(AppNavigator())
 }

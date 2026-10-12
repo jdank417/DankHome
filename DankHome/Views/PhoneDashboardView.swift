@@ -16,6 +16,7 @@ struct PhoneDashboardView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(SceneRecorder.self) private var recorder
     @Environment(WeatherStore.self) private var weather
+    @Environment(AppNavigator.self) private var navigator
     @ObservedObject private var queue = SystemMusicPlayer.shared.queue
     @State private var showSettings = false
     @State private var showAssistant = false
@@ -97,21 +98,28 @@ struct PhoneDashboardView: View {
             EnergyView()
         }
         .sheet(isPresented: $showAutomations) {
-            NavigationStack {
-                AutomationSettings()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showAutomations = false }
-                        }
-                    }
-            }
-            .preferredColorScheme(.dark)
+            AutomationsSheet()
         }
         .sheet(item: Bindable(recorder).review) { review in
             RecordingReviewView(review: review)
         }
         .onChange(of: recorder.isRecording) { _, recording in
             if recording { showSettings = false }
+        }
+        // The assistant asked for a screen: close the chat, then open it.
+        .onChange(of: navigator.request) { _, screen in
+            guard let screen else { return }
+            navigator.request = nil
+            let wasOpen = showAssistant
+            showAssistant = false
+            Task {
+                if wasOpen { try? await Task.sleep(for: .milliseconds(500)) }
+                switch screen {
+                case .whatsOn: showEnergy = true
+                case .settings: showSettings = true
+                case .automations: showAutomations = true
+                }
+            }
         }
     }
 

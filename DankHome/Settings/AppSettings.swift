@@ -13,9 +13,12 @@ final class AppSettings {
     }
 
     private static let key = "preferences.v1"
+    /// Off for tests, so they never touch saved settings.
+    private let persists: Bool
 
-    init() {
-        prefs = Self.load() ?? Preferences()
+    init(persists: Bool = true) {
+        self.persists = persists
+        prefs = (persists ? Self.load() : nil) ?? Preferences()
     }
 
     /// Lays the saved values over the defaults, so settings added in a newer version
@@ -38,6 +41,7 @@ final class AppSettings {
     func reset() { prefs = Preferences() }
 
     private func save() {
+        guard persists else { return }
         if let data = try? JSONEncoder().encode(prefs) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }

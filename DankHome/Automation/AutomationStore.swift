@@ -47,8 +47,12 @@ final class AutomationStore {
         var routines: [Routine]
     }
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
+    /// Off for tests, so they never touch saved timers and routines.
+    private let persists: Bool
+
+    init(persists: Bool = true) {
+        self.persists = persists
+        if persists, let data = UserDefaults.standard.data(forKey: Self.key),
            let saved = try? JSONDecoder().decode(Saved.self, from: data) {
             timers = saved.timers
             routines = saved.routines
@@ -63,6 +67,7 @@ final class AutomationStore {
     }
 
     private func save() {
+        guard persists else { return }
         if let data = try? JSONEncoder().encode(Saved(timers: timers, routines: routines)) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }

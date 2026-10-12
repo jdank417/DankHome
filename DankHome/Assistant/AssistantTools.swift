@@ -48,7 +48,7 @@ nonisolated struct ControlLightsTool: Tool {
 nonisolated struct DeviceTool: Tool {
     let home: HomeStore
     let name = "controlDevice"
-    let description = "Locks a door, closes the garage or shades, opens shades, or turns a fan, outlet or switch on or off."
+    let description = "Locks a door, closes the garage, opens or closes shades, turns a fan, outlet or switch on or off, or sets a shade's position or a fan's speed."
 
     @Generable
     nonisolated enum Action {
@@ -60,9 +60,14 @@ nonisolated struct DeviceTool: Tool {
         @Guide(description: "The device's name, such as Front Door, Garage or Ceiling Fan")
         var device: String
         var action: Action
+        @Guide(description: "Shade position or fan speed percent, only when a level is asked for", .range(0...100))
+        var level: Int?
     }
 
     func call(arguments: Arguments) async throws -> String {
+        if let level = arguments.level {
+            return await home.assistantSetLevel(arguments.device, level: level)
+        }
         let active: Bool = switch arguments.action {
         case .lock, .open, .on: true
         case .unlock, .close, .off: false
@@ -110,11 +115,11 @@ nonisolated struct SceneTool: Tool {
 nonisolated struct MusicTool: Tool {
     let music: MusicStore
     let name = "controlMusic"
-    let description = "Controls Apple Music: play, pause, next or previous, or play a library playlist by name."
+    let description = "Controls Apple Music: play, pause, next, previous, shuffle or repeat, or play a library playlist by name."
 
     @Generable
     nonisolated struct Arguments {
-        @Guide(description: "One of: play, pause, next, previous")
+        @Guide(description: "One of: play, pause, next, previous, shuffle, repeat")
         var action: String?
         @Guide(description: "Name of a playlist to play")
         var playlist: String?
@@ -268,6 +273,17 @@ extension HomeStore {
         return "Success. \(verb) \(device.name)."
     }
 
+    func assistantSetLevel(_ name: String, level: Int) -> String {
+        guard let device = devices.first(where: { $0.name.fuzzyMatches(name) && ($0.kind == .shade || $0.kind == .fan) })
+                ?? devices.first(where: { "\($0.roomName) \($0.name)".fuzzyMatches(name) && ($0.kind == .shade || $0.kind == .fan) }) else {
+            let adjustable = devices.filter { $0.kind == .shade || $0.kind == .fan }.map(\.name)
+            return adjustable.isEmpty ? "There are no shades or fans." : "No shade or fan called \(name). Try: \(adjustable.joined(separator: ", "))."
+        }
+        guard device.isReachable else { return "\(device.name) isn't responding." }
+        setLevel(Double(level), for: device.id)
+        return device.kind == .shade ? "Success. \(device.name) set to \(level)% open." : "Success. \(device.name) set to \(level)%."
+    }
+
     func assistantThermostat(temperature: Double?, mode: String?, unit: TemperatureUnit) -> String {
         guard let thermostat = thermostats.first else { return "There's no thermostat in this home." }
         if let mode = mode?.lowercased(),
@@ -403,6 +419,16 @@ extension MusicStore {
         case let a where a.contains("prev") || a.contains("back"):
             previous()
             return "Went back."
+        case let a where a.contains("shuffle"):
+            toggleShuffle()
+            return player.state.shuffleMode == .songs ? "Shuffle is on." : "Shuffle is off."
+        case let a where a.contains("repeat"):
+            cycleRepeat()
+            return switch player.state.repeatMode {
+            case .all: "Repeating the playlist."
+            case .one: "Repeating this song."
+            default: "Repeat is off."
+            }
         default:
             if player.state.playbackStatus != .playing { togglePlayPause() }
             return "Playing."

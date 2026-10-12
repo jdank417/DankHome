@@ -119,6 +119,23 @@ struct AutomationSettings: View {
     }
 }
 
+/// Automations on its own, with a Done button, for opening straight from the dashboard.
+struct AutomationsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            AutomationSettings()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
 // MARK: - Routine editor
 
 struct RoutineEditor: View {

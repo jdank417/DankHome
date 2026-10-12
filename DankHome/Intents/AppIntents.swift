@@ -22,11 +22,15 @@ final class AppStores {
     let assistant = AssistantStore()
     let recorder = SceneRecorder()
     let automation = AutomationStore()
+    let navigator = AppNavigator()
+    /// Every app action the assistant can take.
+    let app: AppControl
 
     var runner: SceneRunner { SceneRunner(home: home, music: music, settings: settings) }
 
     private init() {
-        assistant.configure(home: home, music: music, weather: weather, settings: settings, automation: automation)
+        app = AppControl(home: home, settings: settings, automation: automation, idle: idle, navigator: navigator)
+        assistant.configure(home: home, music: music, weather: weather, settings: settings, automation: automation, app: app)
         let runCommand = assistant.perform
         automation.configure(home: home, settings: settings, weather: weather) { command in
             await runCommand(command)

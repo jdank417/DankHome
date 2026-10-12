@@ -74,10 +74,11 @@ struct AutomationSettings: View {
     private var routinesSection: some View {
         Section {
             ForEach(automation.routines) { routine in
-                Button {
-                    editing = routine
-                } label: {
-                    HStack {
+                HStack {
+                    // The toggle sits beside the button, not inside it, so both stay tappable.
+                    Button {
+                        editing = routine
+                    } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(routine.command.capitalizedFirst)
                                 .foregroundStyle(.primary)
@@ -90,16 +91,16 @@ struct AutomationSettings: View {
                                     .foregroundStyle(.green)
                             }
                         }
-                        Spacer()
-                        Toggle("Enabled", isOn: Binding(
-                            get: { routine.isEnabled },
-                            set: { automation.setEnabled($0, for: routine.id) }
-                        ))
-                        .labelsHidden()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
                     }
-                    .contentShape(.rect)
+                    .buttonStyle(.plain)
+                    Toggle("Enabled", isOn: Binding(
+                        get: { routine.isEnabled },
+                        set: { automation.setEnabled($0, for: routine.id) }
+                    ))
+                    .labelsHidden()
                 }
-                .buttonStyle(.plain)
             }
             .onDelete { offsets in
                 for index in offsets { automation.remove(automation.routines[index]) }

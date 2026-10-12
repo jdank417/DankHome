@@ -172,17 +172,8 @@ nonisolated struct RoutineTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let time: RoutineTime = switch arguments.when {
-        case .clockTime: .clock(hour: arguments.hour ?? 22, minute: arguments.minute ?? 0)
-        case .sunrise: .sunrise(offsetMinutes: 0)
-        case .sunset: .sunset(offsetMinutes: 0)
-        }
-        let days: Set<Int> = switch arguments.days {
-        case .everyDay: []
-        case .weekdays: Routine.weekdays
-        case .weekends: Routine.weekends
-        }
-        return await automation.assistantRoutine(arguments.command, time: time, days: days)
+        await automation.assistantRoutine(arguments.command, when: arguments.when, hour: arguments.hour,
+                                          minute: arguments.minute, days: arguments.days)
     }
 }
 
@@ -377,9 +368,20 @@ extension AutomationStore {
         return "Success. Will \(command.lowercased()) at \(timer.fireDate.formatted(date: .omitted, time: .shortened))."
     }
 
-    func assistantRoutine(_ command: String, time: RoutineTime, days: Set<Int>) -> String {
+    func assistantRoutine(_ command: String, when: RoutineTool.When, hour: Int?, minute: Int?,
+                          days: RoutineTool.Days) -> String {
         let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else { return "Say what the routine should do." }
+        let time: RoutineTime = switch when {
+        case .clockTime: .clock(hour: hour ?? 22, minute: minute ?? 0)
+        case .sunrise: .sunrise(offsetMinutes: 0)
+        case .sunset: .sunset(offsetMinutes: 0)
+        }
+        let days: Set<Int> = switch days {
+        case .everyDay: []
+        case .weekdays: Routine.weekdays
+        case .weekends: Routine.weekends
+        }
         let routine = Routine(command: command, time: time, days: days)
         save(routine)
         return "Success. \(routine.scheduleText), DankHome will \(command.lowercased())."

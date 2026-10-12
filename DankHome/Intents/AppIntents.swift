@@ -27,8 +27,9 @@ final class AppStores {
 
     private init() {
         assistant.configure(home: home, music: music, weather: weather, settings: settings, automation: automation)
-        automation.configure(home: home, settings: settings, weather: weather) { [assistant] command in
-            await assistant.perform(command)
+        let runCommand = assistant.perform
+        automation.configure(home: home, settings: settings, weather: weather) { command in
+            await runCommand(command)
         }
     }
 

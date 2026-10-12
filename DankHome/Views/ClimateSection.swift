@@ -249,4 +249,3 @@ struct ThermostatCard: View {
         .glassEffect(.regular.interactive(), in: .circle)
     }
 }
-

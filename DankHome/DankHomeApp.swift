@@ -20,11 +20,18 @@ struct DankHomeApp: App {
     @State private var recorder = AppStores.shared.recorder
     @State private var automation = AppStores.shared.automation
 
+    static let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+
     var body: some Scene {
         WindowGroup {
             ZStack {
-                DashboardView()
-                if idle.isSleeping {
+                // The iPhone gets its own scrolling layout; the iPad dashboard needs a big screen.
+                if Self.isPhone {
+                    PhoneDashboardView()
+                } else {
+                    DashboardView()
+                }
+                if idle.isSleeping, !Self.isPhone {
                     NightClockView()
                         .transition(.opacity)
                         .zIndex(1)
@@ -51,7 +58,8 @@ struct DankHomeApp: App {
             }
             .onChange(of: settings.prefs.keepAwake, initial: true) { _, keepAwake in
                 // Wall-mounted: keep the screen awake while the app is open.
-                UIApplication.shared.isIdleTimerDisabled = keepAwake
+                // A phone in a pocket should still lock.
+                UIApplication.shared.isIdleTimerDisabled = keepAwake && !Self.isPhone
             }
             // Re-fetch weather every 30 minutes, and right away when its settings change.
             .task(id: settings.prefs.weatherKey) {
@@ -71,7 +79,7 @@ struct DankHomeApp: App {
             .task {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(5))
-                    idle.check(settings.prefs)
+                    if !Self.isPhone { idle.check(settings.prefs) }
                 }
             }
         }

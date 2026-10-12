@@ -11,6 +11,7 @@ struct LightDetailView: View {
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var lightID: UUID
 
     @State private var dragStart: Double?
@@ -33,7 +34,7 @@ struct LightDetailView: View {
                     }
                 }
             }
-            .padding(32)
+            .padding(sizeClass == .compact ? 20 : 32)
             .animation(.snappy, value: light)
         }
     }
@@ -83,8 +84,8 @@ struct LightDetailView: View {
     private func header(_ light: Light) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(light.name).font(.largeTitle.bold())
-                Text(light.roomName).font(.title3).foregroundStyle(.secondary)
+                Text(light.name).font(sizeClass == .compact ? .title.bold() : .largeTitle.bold())
+                Text(light.roomName).font(sizeClass == .compact ? .body : .title3).foregroundStyle(.secondary)
             }
             .lineLimit(1)
             Spacer(minLength: 0)
@@ -96,8 +97,13 @@ struct LightDetailView: View {
                 order.insert(light.key, at: 0)
                 withAnimation(.snappy) { settings.prefs.lightOrder = order }
             } label: {
-                Label("Move to Top", systemImage: "arrow.up.to.line")
-                    .fixedSize()
+                if sizeClass == .compact {
+                    Image(systemName: "arrow.up.to.line")
+                        .accessibilityLabel("Move to Top")
+                } else {
+                    Label("Move to Top", systemImage: "arrow.up.to.line")
+                        .fixedSize()
+                }
             }
             .buttonStyle(.glass)
             Button("Done") { dismiss() }

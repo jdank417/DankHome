@@ -18,9 +18,12 @@ struct SettingsView: View {
                     NavigationLink { ClockSettings() } label: {
                         row("Clock", "clock.fill", .blue, detail: settings.prefs.clock.font.title)
                     }
-                    NavigationLink { NightClockSettings() } label: {
-                        row("Night Clock", "moon.stars.fill", .indigo,
-                            detail: settings.prefs.nightEnabled ? "After \(settings.prefs.nightIdleMinutes) min" : "Off")
+                    // The night clock is for a wall-mounted iPad; a phone just locks.
+                    if !DankHomeApp.isPhone {
+                        NavigationLink { NightClockSettings() } label: {
+                            row("Night Clock", "moon.stars.fill", .indigo,
+                                detail: settings.prefs.nightEnabled ? "After \(settings.prefs.nightIdleMinutes) min" : "Off")
+                        }
                     }
                     NavigationLink { AppearanceSettings() } label: {
                         row("Appearance", "paintpalette.fill", .pink, detail: settings.prefs.theme.title)
@@ -352,9 +355,11 @@ struct DashboardSettings: View {
         @Bindable var settings = settings
         Form {
             Section {
-                Picker("Side Panel", selection: $settings.prefs.sidePanelOnLeft) {
-                    Text("Left").tag(true)
-                    Text("Right").tag(false)
+                if !DankHomeApp.isPhone {
+                    Picker("Side Panel", selection: $settings.prefs.sidePanelOnLeft) {
+                        Text("Left").tag(true)
+                        Text("Right").tag(false)
+                    }
                 }
                 Toggle("Thermostat", isOn: $settings.prefs.showClimate)
                 Toggle("Weather", isOn: $settings.prefs.showWeather)
@@ -364,7 +369,9 @@ struct DashboardSettings: View {
             } header: {
                 Text("Layout")
             } footer: {
-                Text("Everything always fits on one screen. Hiding a section gives the lights more room.")
+                Text(DankHomeApp.isPhone
+                     ? "Hide sections you don't use to keep the page short."
+                     : "Everything always fits on one screen. Hiding a section gives the lights more room.")
             }
             Section {
                 Toggle("Click Sounds", isOn: $settings.prefs.clickSounds)
@@ -384,10 +391,12 @@ struct DashboardSettings: View {
             } footer: {
                 Text("Plugs, switches and fans left on longer than this show up in orange under the clock. Tap the line under the clock to see everything that's on.")
             }
-            Section {
-                Toggle("Keep Screen On", isOn: $settings.prefs.keepAwake)
-            } footer: {
-                Text("Stops the iPad from auto-locking while DankHome is open. For a wall panel, also turn on Guided Access in Settings › Accessibility.")
+            if !DankHomeApp.isPhone {
+                Section {
+                    Toggle("Keep Screen On", isOn: $settings.prefs.keepAwake)
+                } footer: {
+                    Text("Stops the iPad from auto-locking while DankHome is open. For a wall panel, also turn on Guided Access in Settings › Accessibility.")
+                }
             }
         }
         .navigationTitle("Dashboard")
@@ -406,7 +415,7 @@ struct AssistantSettings: View {
             Section {
                 LabeledContent("Apple Intelligence", value: assistant.unavailableReason ?? "Ready")
             } footer: {
-                Text("The assistant runs entirely on this iPad using Apple Intelligence. Nothing you say leaves the device.")
+                Text("The assistant runs entirely on this device using Apple Intelligence. Nothing you say leaves the device.")
             }
             Section {
                 Toggle("Speak Replies", isOn: $settings.prefs.assistantSpeaks)

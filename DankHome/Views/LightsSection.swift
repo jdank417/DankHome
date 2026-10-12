@@ -10,8 +10,6 @@ struct LightsGrid: View {
     @Environment(IdleMonitor.self) private var idle
     @Environment(AppSettings.self) private var settings
     @State private var detailLight: Light?
-    @State private var confirmAllOff = false
-    @State private var showRoomColor = false
 
     /// The saved arrangement (older versions pinned lights instead).
     private var savedOrder: [String] {
@@ -22,57 +20,11 @@ struct LightsGrid: View {
         GridReorder.sorted(home.visibleLights, by: savedOrder, key: \.key)
     }
 
-    private func setAll(on: Bool) {
-        Feedback.press()
-        withAnimation(.snappy) { home.setAllVisible(on: on) }
-    }
-
     private let spacing = Metrics.gap
 
     var body: some View {
         VStack(alignment: .leading, spacing: Metrics.gap) {
-            SectionHeader(title: "Lights", symbol: "lightbulb.fill") {
-                Text("\(home.lightsOnCount) of \(home.visibleLights.count) on")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                if home.visibleLights.contains(where: { $0.supportsColor || $0.colorTemperature != nil || $0.brightness != nil }) {
-                    Button {
-                        Feedback.tap()
-                        showRoomColor = true
-                    } label: {
-                        Circle()
-                            .fill(AngularGradient(colors: stride(from: 0.0, through: 360, by: 45).map {
-                                Color(hue: $0 / 360, saturation: 0.85, brightness: 1)
-                            }, center: .center))
-                            .overlay(Circle().fill(RadialGradient(colors: [.white, .white.opacity(0)], center: .center,
-                                                                  startRadius: 0, endRadius: 11)))
-                            .frame(width: 22, height: 22)
-                            .frame(width: Metrics.headerHeight, height: Metrics.headerHeight)
-                            .contentShape(.circle)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("Color for all lights")
-                }
-                Button {
-                    let turningOn = home.lightsOnCount == 0
-                    if !turningOn, settings.prefs.confirmAllOff, home.lightsOnCount >= 5 {
-                        confirmAllOff = true
-                    } else {
-                        setAll(on: turningOn)
-                    }
-                } label: {
-                    Label(home.lightsOnCount == 0 ? "All On" : "All Off",
-                          systemImage: home.lightsOnCount == 0 ? "lightbulb.max.fill" : "power")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(height: Metrics.headerHeight)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-            }
+            LightsHeader()
 
             if home.visibleLights.isEmpty {
                 ContentUnavailableView("No Lights", systemImage: "lightbulb.slash",
@@ -93,23 +45,12 @@ struct LightsGrid: View {
                 }
             }
         }
-        .sheet(isPresented: $showRoomColor) {
-            RoomColorView()
-                .presentationSizing(.page)
-        }
         .sheet(item: $detailLight) { light in
             LightDetailView(lightID: light.id)
                 .presentationSizing(.page)
         }
         .onChange(of: idle.isSleeping) { _, sleeping in
-            if sleeping {
-                detailLight = nil
-                showRoomColor = false
-            }
-        }
-        .alert("Turn off \(home.lightsOnCount) lights?", isPresented: $confirmAllOff) {
-            Button("Turn Off") { setAll(on: false) }
-            Button("Cancel", role: .cancel) {}
+            if sleeping { detailLight = nil }
         }
     }
 
@@ -285,5 +226,75 @@ struct LightTile: View {
                 let current = home.lights.first { $0.id == light.id }
                 home.setBrightness(current?.isOn == true ? current?.brightness ?? 0 : 0, for: light.id, commit: true)
             }
+    }
+}
+
+/// "Lights · 4 of 8 on", a color button for the whole room, and All On / All Off.
+struct LightsHeader: View {
+    @Environment(HomeStore.self) private var home
+    @Environment(IdleMonitor.self) private var idle
+    @Environment(AppSettings.self) private var settings
+    @State private var confirmAllOff = false
+    @State private var showRoomColor = false
+
+    private func setAll(on: Bool) {
+        Feedback.press()
+        withAnimation(.snappy) { home.setAllVisible(on: on) }
+    }
+
+    var body: some View {
+        SectionHeader(title: "Lights", symbol: "lightbulb.fill") {
+            Text("\(home.lightsOnCount) of \(home.visibleLights.count) on")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1)
+            if home.visibleLights.contains(where: { $0.supportsColor || $0.colorTemperature != nil || $0.brightness != nil }) {
+                Button {
+                    Feedback.tap()
+                    showRoomColor = true
+                } label: {
+                    Circle()
+                        .fill(AngularGradient(colors: stride(from: 0.0, through: 360, by: 45).map {
+                            Color(hue: $0 / 360, saturation: 0.85, brightness: 1)
+                        }, center: .center))
+                        .overlay(Circle().fill(RadialGradient(colors: [.white, .white.opacity(0)], center: .center,
+                                                              startRadius: 0, endRadius: 11)))
+                        .frame(width: 22, height: 22)
+                        .frame(width: Metrics.headerHeight, height: Metrics.headerHeight)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Color for all lights")
+            }
+            Button {
+                let turningOn = home.lightsOnCount == 0
+                if !turningOn, settings.prefs.confirmAllOff, home.lightsOnCount >= 5 {
+                    confirmAllOff = true
+                } else {
+                    setAll(on: turningOn)
+                }
+            } label: {
+                Label(home.lightsOnCount == 0 ? "All On" : "All Off",
+                      systemImage: home.lightsOnCount == 0 ? "lightbulb.max.fill" : "power")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: Metrics.headerHeight)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        }
+        .sheet(isPresented: $showRoomColor) {
+            RoomColorView()
+                .presentationSizing(.page)
+        }
+        .onChange(of: idle.isSleeping) { _, sleeping in
+            if sleeping { showRoomColor = false }
+        }
+        .alert("Turn off \(home.lightsOnCount) lights?", isPresented: $confirmAllOff) {
+            Button("Turn Off") { setAll(on: false) }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }

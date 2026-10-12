@@ -40,7 +40,7 @@ final class VoiceInput {
         guard !isListening else { return }
         errorMessage = nil
         guard Self.isSupported else {
-            errorMessage = "Voice works on a real iPad, not the Simulator."
+            errorMessage = "Voice works on a real device, not the Simulator."
             return
         }
         guard await Self.requestPermissions() else {

@@ -57,7 +57,7 @@ final class AssistantStore {
     var unavailableReason: String? {
         switch SystemLanguageModel.default.availability {
         case .available: nil
-        case .unavailable(.deviceNotEligible): "This iPad doesn't support Apple Intelligence."
+        case .unavailable(.deviceNotEligible): "This device doesn't support Apple Intelligence."
         case .unavailable(.appleIntelligenceNotEnabled): "Turn on Apple Intelligence in Settings › Apple Intelligence & Siri."
         case .unavailable(.modelNotReady): "Apple Intelligence is still downloading. Try again in a few minutes."
         case .unavailable: "Apple Intelligence isn't available right now."

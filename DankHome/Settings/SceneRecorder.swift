@@ -94,6 +94,7 @@ struct RecordingBanner: View {
     @Environment(HomeStore.self) private var home
     @Environment(MusicStore.self) private var music
     @State private var pulse = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         HStack(spacing: Metrics.inner) {
@@ -106,7 +107,9 @@ struct RecordingBanner: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Recording “\(recorder.session?.name ?? "")”")
                     .font(.subheadline.weight(.semibold))
-                Text("Set lights, devices, the thermostat and music how you want them. Hold a light for color.")
+                    .lineLimit(1)
+                Text(sizeClass == .compact ? "Set things how you want them."
+                     : "Set lights, devices, the thermostat and music how you want them. Hold a light for color.")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)

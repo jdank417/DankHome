@@ -13,6 +13,8 @@ struct DevicesRow: View {
 
     /// Width of the column the row sits in.
     var width: CGFloat
+    /// Rows shown before the rest go behind "More". The iPhone, which scrolls, shows them all.
+    var maxRows = 2
     @State private var showAll = false
     @State private var confirming: Device?
     @State private var detail: Device?
@@ -24,7 +26,7 @@ struct DevicesRow: View {
         let devices = GridReorder.sorted(home.visibleDevices, by: settings.prefs.deviceOrder, key: \.key)
         if !devices.isEmpty {
             let columns = min(devices.count, max(1, Int((width + Metrics.gap) / (Self.minTileWidth + Metrics.gap))))
-            let rows = min(2, (devices.count + columns - 1) / columns)
+            let rows = min(maxRows, (devices.count + columns - 1) / columns)
             let overflow = devices.count > columns * rows
             let shown = overflow ? Array(devices.prefix(columns * rows - 1)) : devices
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Metrics.gap), count: columns),

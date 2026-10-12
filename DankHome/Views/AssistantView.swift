@@ -93,7 +93,7 @@ struct AssistantView: View {
         VStack(alignment: .leading, spacing: Metrics.inner) {
             Text("Ask me to control your home")
                 .font(.headline)
-            Text("Lights, thermostat, scenes, music and the weather — all handled on this iPad.")
+            Text("Lights, thermostat, scenes, music and the weather — all handled on this device.")
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.6))
             ForEach(AssistantStore.suggestions(scenes: settings.sceneButtons(home: home).map(\.name)), id: \.self) { suggestion in

@@ -21,8 +21,11 @@ final class AppSettings {
     /// Lays the saved values over the defaults, so settings added in a newer version
     /// start at their default instead of wiping everything else.
     private static func load() -> Preferences? {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        UserDefaults.standard.data(forKey: key).flatMap(decode)
+    }
+
+    static func decode(_ data: Data) -> Preferences? {
+        guard let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defaultsData = try? JSONEncoder().encode(Preferences()),
               var merged = try? JSONSerialization.jsonObject(with: defaultsData) as? [String: Any] else { return nil }
         for (field, value) in saved {

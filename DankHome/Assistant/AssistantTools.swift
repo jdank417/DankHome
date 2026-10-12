@@ -285,6 +285,16 @@ extension HomeStore {
         if !devices.isEmpty {
             lines.append("DEVICES: " + devices.map { "\($0.name) (\($0.roomName)) \($0.status.lowercased())" }.joined(separator: ", ") + ".")
         }
+        let powered = poweredItems().filter { $0.source != .light }
+        if !powered.isEmpty {
+            let described = powered.map { item in
+                var text = item.name
+                if let since = item.since { text += " on for \(EnergyFormat.duration(Date.now.timeIntervalSince(since)))" }
+                if let watts = item.watts { text += " using \(EnergyFormat.watts(watts))" }
+                return text
+            }
+            lines.append("POWER: \(described.joined(separator: ", "))\(totalWatts.map { "; total \(EnergyFormat.watts($0))" } ?? "").")
+        }
         let sceneNames = (prefs.sceneButtons?.map(\.name) ?? []) + scenes.map(\.name)
         if !sceneNames.isEmpty { lines.append("SCENES: \(Array(Set(sceneNames)).sorted().joined(separator: ", ")).") }
         if let entry = SystemMusicPlayer.shared.queue.currentEntry {

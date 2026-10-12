@@ -20,6 +20,7 @@ struct DashboardView: View {
     @ObservedObject private var queue = SystemMusicPlayer.shared.queue
     @State private var showSettings = false
     @State private var showAssistant = false
+    @State private var showEnergy = false
     @State private var talk = PushToTalk()
 
     private var artworkColor: Color {
@@ -86,6 +87,10 @@ struct DashboardView: View {
             AssistantView()
                 .presentationSizing(.form)
         }
+        .sheet(isPresented: $showEnergy) {
+            EnergyView()
+                .presentationSizing(.form)
+        }
         .sheet(item: Bindable(recorder).review) { review in
             RecordingReviewView(review: review)
         }
@@ -97,6 +102,7 @@ struct DashboardView: View {
             if sleeping {
                 showSettings = false
                 showAssistant = false
+                showEnergy = false
                 talk.dismiss()
             }
         }
@@ -188,9 +194,17 @@ struct DashboardView: View {
                                 .lineLimit(1)
                                 .fixedSize()
                         }
-                        StatusLine()
-                            .padding(.top, 2)
-                            .frame(maxWidth: landscape ? 280 : 420, alignment: .leading)
+                        // Tap for what's on and how long it's been on.
+                        Button {
+                            Feedback.tap()
+                            showEnergy = true
+                        } label: {
+                            StatusLine(now: context.date)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                        .frame(maxWidth: landscape ? 280 : 420, alignment: .leading)
                     }
                 }
 

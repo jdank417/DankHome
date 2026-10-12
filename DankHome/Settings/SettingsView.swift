@@ -372,6 +372,16 @@ struct DashboardSettings: View {
                 Text("Click Sounds plays a soft tick with each tap. Confirm Before All Off asks first when five or more lights are on.")
             }
             Section {
+                Picker("Warn When Left On", selection: $settings.prefs.leftOnWarningHours) {
+                    Text("Never").tag(0)
+                    ForEach([1, 2, 4, 8, 12], id: \.self) { Text("After \($0) hr").tag($0) }
+                }
+            } header: {
+                Text("Energy")
+            } footer: {
+                Text("Plugs, switches and fans left on longer than this show up in orange under the clock. Tap the line under the clock to see everything that's on.")
+            }
+            Section {
                 Toggle("Keep Screen On", isOn: $settings.prefs.keepAwake)
             } footer: {
                 Text("Stops the iPad from auto-locking while DankHome is open. For a wall panel, also turn on Guided Access in Settings › Accessibility.")

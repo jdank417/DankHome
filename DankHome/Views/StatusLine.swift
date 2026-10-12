@@ -10,6 +10,8 @@ import SwiftUI
 struct StatusLine: View {
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
+    /// Passed in from a timeline so "left on" warnings appear on time.
+    var now: Date = .now
 
     private struct Item: Identifiable {
         var id: String { text }
@@ -33,6 +35,11 @@ struct StatusLine: View {
             }
         }
 
+        for item in home.leftOnDevices(hours: settings.prefs.leftOnWarningHours, now: now) {
+            let duration = item.since.map { EnergyFormat.duration(now.timeIntervalSince($0)) } ?? ""
+            alerts.append(Item(text: "\(item.name) on \(duration)", symbol: "bolt.fill", alert: true))
+        }
+
         if let error = home.writeError {
             alerts.insert(Item(text: error, symbol: "exclamationmark.triangle.fill", alert: true), at: 0)
         }
@@ -47,6 +54,9 @@ struct StatusLine: View {
             case .cooling: info.append(Item(text: "Cooling to \(target)"))
             case .idle: info.append(Item(text: "\(thermostat.mode.title) · \(target)"))
             }
+        }
+        if let watts = home.totalWatts, watts >= 1 {
+            info.append(Item(text: EnergyFormat.watts(watts), symbol: "bolt.fill"))
         }
         if alerts.isEmpty, home.devices.contains(where: { $0.kind == .lock }) {
             info.append(Item(text: "Doors locked", symbol: "lock.fill"))

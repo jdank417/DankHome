@@ -102,6 +102,10 @@ struct Device: Identifiable, Equatable {
     var isMoving = false
     /// Lock jammed or garage door obstructed.
     var hasProblem = false
+    /// Power draw right now, from plugs that report it (e.g. Eve Energy).
+    var watts: Double?
+    /// Lifetime energy use in kWh, when the plug reports it.
+    var energyKWh: Double?
     var isReachable: Bool
 
     var key: String { "\(roomName)|\(name)" }
@@ -169,9 +173,15 @@ struct HomeScene: Identifiable, Equatable {
 final class HomeStore: NSObject {
     private(set) var homeName = "Home"
     private(set) var roomNames: [String] = []
-    private(set) var lights: [Light] = []
+    private(set) var lights: [Light] = [] {
+        didSet { trackOnSince() }
+    }
     private(set) var thermostats: [Thermostat] = []
-    private(set) var devices: [Device] = []
+    private(set) var devices: [Device] = [] {
+        didSet { trackOnSince() }
+    }
+    /// When each light or device ("Room|Name") was last turned on. Kept across launches.
+    private(set) var onSince: [String: Date] = [:]
     private(set) var scenes: [HomeScene] = []
     private(set) var isLoading = true
     private(set) var isDemo = false
@@ -228,6 +238,7 @@ final class HomeStore: NSObject {
 
     override init() {
         selectedRoom = UserDefaults.standard.string(forKey: "selectedRoom")
+        onSince = Self.savedOnSince()
         super.init()
         manager.delegate = self
     }
@@ -510,6 +521,7 @@ final class HomeStore: NSObject {
             loadDemo()
             return
         }
+        if isDemo { onSince = Self.savedOnSince() }
         isDemo = false
         homeName = home.name
         services = [:]
@@ -579,6 +591,7 @@ final class HomeStore: NSObject {
         HMCharacteristicTypeCurrentDoorState, HMCharacteristicTypeTargetDoorState, HMCharacteristicTypeObstructionDetected,
         HMCharacteristicTypeCurrentPosition, HMCharacteristicTypeActive, HMCharacteristicTypeRotationSpeed,
         HMCharacteristicTypeContactState,
+        EveCharacteristic.watts, EveCharacteristic.kilowattHours,
     ]
 
     private static let deviceKinds: [String: Device.Kind] = [
@@ -663,6 +676,10 @@ final class HomeStore: NSObject {
             device.level = value
         case (.contact, HMCharacteristicTypeContactState):
             device.active = value == 1  // 1 = contact not detected = open
+        case (_, EveCharacteristic.watts):
+            device.watts = value
+        case (_, EveCharacteristic.kilowattHours):
+            device.energyKWh = value
         default:
             break
         }
@@ -785,10 +802,55 @@ final class HomeStore: NSObject {
         }
     }
 
+    // MARK: - Energy
+
+    private static let onSinceKey = "onSince.v1"
+
+    private static func savedOnSince() -> [String: Date] {
+        guard let data = UserDefaults.standard.data(forKey: onSinceKey),
+              let saved = try? JSONDecoder().decode([String: Date].self, from: data) else { return [:] }
+        return saved
+    }
+
+    /// Notes when things turn on, and forgets them when they turn off. Unreachable
+    /// accessories keep their time, since their state isn't known.
+    private func trackOnSince() {
+        let now = Date.now
+        var updated: [String: Date] = [:]
+        let items = lights.map { ($0.key, $0.isOn, $0.isReachable) }
+            + devices.filter(\.kind.usesPower).map { ($0.key, $0.active, $0.isReachable) }
+        for (key, isOn, isReachable) in items {
+            if !isReachable {
+                updated[key] = onSince[key]
+            } else if isOn {
+                updated[key] = onSince[key] ?? now
+            }
+        }
+        guard updated != onSince else { return }
+        onSince = updated
+        if !isDemo, let data = try? JSONEncoder().encode(updated) {
+            UserDefaults.standard.set(data, forKey: Self.onSinceKey)
+        }
+    }
+
+    /// Re-reads power meters, which often don't announce changes on their own.
+    func refreshPower() async {
+        let types: Set<String> = [EveCharacteristic.watts, EveCharacteristic.kilowattHours]
+        for (id, service) in services {
+            for characteristic in service.characteristics where types.contains(characteristic.characteristicType) {
+                Task {
+                    try? await characteristic.readValue()
+                    apply(characteristic, to: id)
+                }
+            }
+        }
+    }
+
     // MARK: - Demo data
 
     private func loadDemo() {
         isDemo = true
+        onSince = [:]
         homeName = "Dank Home"
         services = [:]
         actionSets = [:]
@@ -810,7 +872,9 @@ final class HomeStore: NSObject {
             Device(id: UUID(), name: "Back Door", roomName: "Kitchen", kind: .contact, active: false, isReachable: true),
             Device(id: UUID(), name: "Shades", roomName: "Living Room", kind: .shade, active: true, level: 100, isReachable: true),
             Device(id: UUID(), name: "Ceiling Fan", roomName: "Bedroom", kind: .fan, active: false, level: 60, isReachable: true),
-            Device(id: UUID(), name: "Coffee Maker", roomName: "Kitchen", kind: .outlet, active: false, isReachable: true),
+            Device(id: UUID(), name: "Coffee Maker", roomName: "Kitchen", kind: .outlet, active: false, watts: 0, energyKWh: 41.2, isReachable: true),
+            Device(id: UUID(), name: "Space Heater", roomName: "Bedroom", kind: .outlet, active: true, watts: 1480, energyKWh: 212.6, isReachable: true),
+            Device(id: UUID(), name: "TV", roomName: "Living Room", kind: .outlet, active: true, watts: 94, energyKWh: 88.3, isReachable: true),
         ]
         thermostats = [
             Thermostat(id: UUID(), name: "Thermostat", roomName: "Living Room", currentC: 20.5, targetC: 21.5,
@@ -822,6 +886,10 @@ final class HomeStore: NSObject {
             HomeScene(id: UUID(), name: "Movie", symbol: "tv.fill"),
             HomeScene(id: UUID(), name: "Good Night", symbol: "moon.stars.fill"),
         ]
+        // Pretend some things have been on a while, so the energy view has something to say.
+        onSince["Bedroom|Space Heater"] = .now.addingTimeInterval(-6.2 * 3600)
+        onSince["Living Room|TV"] = .now.addingTimeInterval(-50 * 60)
+        onSince["Living Room|Ceiling"] = .now.addingTimeInterval(-3 * 3600)
         isLoading = false
     }
 }

@@ -65,6 +65,8 @@ struct Preferences: Codable, Equatable {
     var demoMode = false
     var clickSounds = false
     var confirmAllOff = true
+    /// Warn when a plug, switch or fan has been on this many hours (0 = never).
+    var leftOnWarningHours = 4
     /// Lights shown first, as "Room|Name". Replaced by `lightOrder`; read once to migrate.
     var pinnedLights: [String] = []
     /// The order of light and device tiles on the dashboard, as "Room|Name".

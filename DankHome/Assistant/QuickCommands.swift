@@ -13,6 +13,14 @@ struct QuickCommands {
     let music: MusicStore
     let settings: AppSettings
     var automation: AutomationStore?
+    var weather: WeatherStore?
+
+    /// What the instant path managed: the replies for what it did, and whatever is
+    /// left for the model ("turn off the kitchen and make it cozy" leaves "make it cozy").
+    struct Result {
+        var replies: [String] = []
+        var remainder: String?
+    }
 
     private static let fillers = ["please", "can you", "could you", "would you", "hey", "dankhome", "dank home", "now"]
     /// Words that mean the request has conditions or timing the model should handle.
@@ -23,12 +31,52 @@ struct QuickCommands {
     private static let everything: Set<String> = ["", "all", "everything", "everywhere", "house", "home", "the house",
                                                   "the home", "all lights", "lights", "light", "every light", "all the lights"]
 
-    func handle(_ input: String) async -> String? {
-        var text = " " + input.lowercased().replacingOccurrences(of: "[^a-z0-9% ]", with: " ", options: .regularExpression) + " "
-        for filler in Self.fillers { text = text.replacingOccurrences(of: " \(filler) ", with: " ") }
-        text = text.replacingOccurrences(of: " +", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+    /// Words a command can start with, so "turn off the kitchen and lock the front door"
+    /// can be split into two commands but "the living and dining room" is left whole.
+    private static let verbs: Set<String> = ["turn", "switch", "set", "dim", "brighten", "make", "lock", "unlock", "open",
+                                             "close", "shut", "run", "start", "activate", "play", "pause", "resume", "skip",
+                                             "put", "cancel", "stop", "next", "previous"]
 
+    /// Handles as much as it can instantly, in order, and hands back the rest.
+    func run(_ input: String) async -> Result {
+        let text = Self.normalize(input)
+        let parts = text.components(separatedBy: " and then ")
+            .flatMap { $0.components(separatedBy: " then ") }
+            .flatMap { $0.components(separatedBy: " and ") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        let splittable = parts.count > 1 && parts.allSatisfy { part in
+            part.split(separator: " ").first.map { Self.verbs.contains(String($0)) } ?? false
+        }
+        guard splittable else {
+            if let reply = await single(text) { return Result(replies: [reply]) }
+            return Result(remainder: input)
+        }
+        var result = Result()
+        for (index, part) in parts.enumerated() {
+            guard let reply = await single(part) else {
+                result.remainder = parts[index...].joined(separator: " and ")
+                break
+            }
+            result.replies.append(reply)
+        }
+        return result
+    }
+
+    /// The reply when everything was handled instantly, else nil.
+    func handle(_ input: String) async -> String? {
+        let result = await run(input)
+        return result.remainder == nil ? result.replies.joined(separator: " ") : nil
+    }
+
+    static func normalize(_ input: String) -> String {
+        var text = " " + input.lowercased().replacingOccurrences(of: "[^a-z0-9% ]", with: " ", options: .regularExpression) + " "
+        for filler in fillers { text = text.replacingOccurrences(of: " \(filler) ", with: " ") }
+        return text.replacingOccurrences(of: " +", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+    }
+
+    private func single(_ text: String) async -> String? {
         if let reply = timerCommand(text) { return reply }
+        if let reply = answer(text) { return reply }
 
         let words = text.split(separator: " ").map(String.init)
         guard !words.isEmpty, words.count <= 9, Self.complex.isDisjoint(with: words) else { return nil }

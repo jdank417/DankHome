@@ -177,24 +177,6 @@ nonisolated struct RoutineTool: Tool {
     }
 }
 
-nonisolated struct HomeStatusTool: Tool {
-    let home: HomeStore
-    let weather: WeatherStore
-    let settings: AppSettings
-    let automation: AutomationStore
-    let name = "getHomeStatus"
-    let description = "Returns the current state of every light, the thermostat, scenes, the weather and what's playing."
-
-    @Generable
-    nonisolated struct Arguments {}
-
-    func call(arguments: Arguments) async throws -> String {
-        let status = await home.assistantStatus(weather: weather, prefs: settings.prefs)
-        guard let scheduled = await automation.assistantSummary else { return status }
-        return status + "\n" + scheduled
-    }
-}
-
 // MARK: - Store helpers
 
 extension HomeStore {

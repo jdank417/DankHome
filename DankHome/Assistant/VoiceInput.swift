@@ -92,7 +92,7 @@ final class VoiceInput {
     private func received(_ text: String?, isFinal: Bool) {
         guard isListening else { return }
         if let text { transcript = text }
-        if isFinal { finish() } else { restartSilenceTimer(seconds: 1.0) }
+        if isFinal { finish() } else { restartSilenceTimer(seconds: 0.8) }
     }
 
     private func restartSilenceTimer(seconds: Double) {

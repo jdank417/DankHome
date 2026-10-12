@@ -78,6 +78,14 @@ struct Preferences: Codable, Equatable {
     // Assistant
     var assistantSpeaks = true
 
+    // Automations
+    var adaptiveLighting = false
+    var adaptiveDayKelvin = 4500.0
+    var adaptiveNightKelvin = 2200.0
+    /// Lights that follow adaptive lighting, as "Room|Name". Empty means every white light.
+    var adaptiveLights: [String] = []
+    var wakeAlarm = WakeAlarm()
+
     // Night clock
     var nightEnabled = true
     var nightIdleMinutes = 5

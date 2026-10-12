@@ -264,4 +264,5 @@ struct DashboardView: View {
         .environment(IdleMonitor())
         .environment(AssistantStore())
         .environment(SceneRecorder())
+        .environment(AutomationStore())
 }

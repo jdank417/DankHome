@@ -18,6 +18,7 @@ struct DankHomeApp: App {
     @State private var idle = AppStores.shared.idle
     @State private var assistant = AppStores.shared.assistant
     @State private var recorder = AppStores.shared.recorder
+    @State private var automation = AppStores.shared.automation
 
     var body: some Scene {
         WindowGroup {
@@ -37,6 +38,7 @@ struct DankHomeApp: App {
             .environment(idle)
             .environment(assistant)
             .environment(recorder)
+            .environment(automation)
             .fontDesign(settings.prefs.appFont.design)
             .tint(settings.prefs.accent.color)
             .task { assistant.prewarm() }
@@ -56,6 +58,13 @@ struct DankHomeApp: App {
                 while !Task.isCancelled {
                     await weather.refresh(settings.prefs)
                     try? await Task.sleep(for: .seconds(30 * 60))
+                }
+            }
+            // Timers, routines, the wake-up light and adaptive lighting.
+            .task {
+                while !Task.isCancelled {
+                    await automation.tick()
+                    try? await Task.sleep(for: .seconds(15))
                 }
             }
             // Check for idle every few seconds to start the night clock.

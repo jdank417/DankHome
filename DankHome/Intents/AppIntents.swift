@@ -21,11 +21,15 @@ final class AppStores {
     let idle = IdleMonitor()
     let assistant = AssistantStore()
     let recorder = SceneRecorder()
+    let automation = AutomationStore()
 
     var runner: SceneRunner { SceneRunner(home: home, music: music, settings: settings) }
 
     private init() {
-        assistant.configure(home: home, music: music, weather: weather, settings: settings)
+        assistant.configure(home: home, music: music, weather: weather, settings: settings, automation: automation)
+        automation.configure(home: home, settings: settings, weather: weather) { [assistant] command in
+            await assistant.perform(command)
+        }
     }
 
     /// Waits (briefly) for HomeKit to load when the app was just launched by Siri.

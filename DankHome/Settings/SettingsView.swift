@@ -31,6 +31,9 @@ struct SettingsView: View {
                     NavigationLink { DashboardSettings() } label: {
                         row("Dashboard", "square.grid.2x2.fill", .orange, detail: nil)
                     }
+                    NavigationLink { AutomationSettings() } label: {
+                        row("Automations", "clock.arrow.2.circlepath", .green, detail: nil)
+                    }
                     NavigationLink { AssistantSettings() } label: {
                         row("Assistant", "sparkles", .purple, detail: nil)
                     }

@@ -10,6 +10,7 @@ import SwiftUI
 struct StatusLine: View {
     @Environment(HomeStore.self) private var home
     @Environment(AppSettings.self) private var settings
+    @Environment(AutomationStore.self) private var automation
     /// Passed in from a timeline so "left on" warnings appear on time.
     var now: Date = .now
 
@@ -45,6 +46,13 @@ struct StatusLine: View {
         }
 
         var info: [Item] = []
+        if let note = automation.lastRunNote {
+            info.append(Item(text: note, symbol: "checkmark.circle.fill"))
+        }
+        if let timer = automation.timers.first {
+            let left = EnergyFormat.duration(timer.fireDate.timeIntervalSince(now) + 59)
+            info.append(Item(text: automation.timers.count == 1 ? "Timer \(left)" : "\(automation.timers.count) timers", symbol: "timer"))
+        }
         let on = home.lights.filter { $0.isOn && $0.isReachable }.count
         info.append(Item(text: on == 0 ? "All lights off" : on == 1 ? "1 light on" : "\(on) lights on"))
         if let thermostat = home.thermostats.first, thermostat.mode != .off {

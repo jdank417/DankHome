@@ -24,6 +24,8 @@ final class AssistantStore {
         "Lock the front door",
         "Will it be cold tonight?",
         "Which lights are on?",
+        "Turn off the lights in 30 minutes",
+        "Every night at 10, run Good Night",
     ]
 
     /// Suggestions that fit the time of day, using the home's own scene names.
@@ -66,6 +68,7 @@ final class AssistantStore {
     @ObservationIgnored private var tools: [any Tool] = []
     @ObservationIgnored private var settings: AppSettings?
     @ObservationIgnored private var quick: QuickCommands?
+    @ObservationIgnored private var automation: AutomationStore?
     @ObservationIgnored private var turns = 0
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
 
@@ -74,16 +77,20 @@ final class AssistantStore {
     /// A fresh session every few turns keeps the prompt small, which keeps replies quick.
     private static let turnsPerSession = 4
 
-    func configure(home: HomeStore, music: MusicStore, weather: WeatherStore, settings: AppSettings) {
+    func configure(home: HomeStore, music: MusicStore, weather: WeatherStore, settings: AppSettings,
+                   automation: AutomationStore) {
         self.settings = settings
-        quick = QuickCommands(home: home, music: music, settings: settings)
+        self.automation = automation
+        quick = QuickCommands(home: home, music: music, settings: settings, automation: automation)
         tools = [
             ControlLightsTool(home: home),
             DeviceTool(home: home),
             ThermostatTool(home: home, settings: settings),
             SceneTool(runner: SceneRunner(home: home, music: music, settings: settings)),
             MusicTool(music: music),
-            HomeStatusTool(home: home, weather: weather, settings: settings),
+            TimerTool(automation: automation),
+            RoutineTool(automation: automation),
+            HomeStatusTool(home: home, weather: weather, settings: settings, automation: automation),
         ]
     }
 
@@ -137,6 +144,21 @@ final class AssistantStore {
         prewarm()
     }
 
+    /// Carries out a command for a timer or routine, without adding it to the chat.
+    func perform(_ command: String) async -> String {
+        if let reply = await quick?.handle(command) { return reply }
+        guard unavailableReason == nil else { return "Couldn't run “\(command)”: Apple Intelligence isn't available." }
+        let session = LanguageModelSession(tools: tools, instructions: """
+            You are DankHome, a home assistant. Carry out the request now using the tools. \
+            Answer in one short sentence.
+            """)
+        do {
+            return try await session.respond(to: command, options: Self.options).content
+        } catch {
+            return "Couldn't run “\(command)”."
+        }
+    }
+
     func reset() {
         messages = []
         session = nil
@@ -175,6 +197,8 @@ final class AssistantStore {
         let session = LanguageModelSession(tools: tools, instructions: """
             You are DankHome, a home assistant. Use the tools to act. \
             Call getHomeStatus for questions about the home, weather or music. \
+            For requests to do something later or after a delay, call setTimer. \
+            For requests that repeat, like every night or every weekday, call scheduleRoutine. \
             Temperatures are in \(unit). It is \(Date.now.formatted(date: .abbreviated, time: .shortened)). \
             Answer in one short sentence.
             """)

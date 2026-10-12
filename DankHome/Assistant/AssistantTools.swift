@@ -125,10 +125,72 @@ nonisolated struct MusicTool: Tool {
     }
 }
 
+nonisolated struct TimerTool: Tool {
+    let automation: AutomationStore
+    let name = "setTimer"
+    let description = "Does something later: after a number of minutes, carries out a command such as turn off the kitchen lights."
+
+    @Generable
+    nonisolated struct Arguments {
+        @Guide(description: "What to do when the time is up, as a short command, such as turn off the kitchen lights")
+        var command: String
+        @Guide(description: "Minutes from now. One hour is 60.", .range(1...1440))
+        var minutes: Int
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        await automation.assistantTimer(arguments.command, minutes: arguments.minutes)
+    }
+}
+
+nonisolated struct RoutineTool: Tool {
+    let automation: AutomationStore
+    let name = "scheduleRoutine"
+    let description = "Repeats a command on a schedule, such as every night at 10 PM run Good Night, or weekdays at sunset close the shades."
+
+    @Generable
+    nonisolated enum When {
+        case clockTime, sunrise, sunset
+    }
+
+    @Generable
+    nonisolated enum Days {
+        case everyDay, weekdays, weekends
+    }
+
+    @Generable
+    nonisolated struct Arguments {
+        @Guide(description: "What to do each time, as a short command, such as run Good Night or close the shades")
+        var command: String
+        @Guide(description: "clockTime for a time of day, or sunrise or sunset")
+        var when: When
+        @Guide(description: "For clockTime: hour from 0 to 23, so 10 PM is 22", .range(0...23))
+        var hour: Int?
+        @Guide(description: "For clockTime: minute from 0 to 59", .range(0...59))
+        var minute: Int?
+        var days: Days
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let time: RoutineTime = switch arguments.when {
+        case .clockTime: .clock(hour: arguments.hour ?? 22, minute: arguments.minute ?? 0)
+        case .sunrise: .sunrise(offsetMinutes: 0)
+        case .sunset: .sunset(offsetMinutes: 0)
+        }
+        let days: Set<Int> = switch arguments.days {
+        case .everyDay: []
+        case .weekdays: Routine.weekdays
+        case .weekends: Routine.weekends
+        }
+        return await automation.assistantRoutine(arguments.command, time: time, days: days)
+    }
+}
+
 nonisolated struct HomeStatusTool: Tool {
     let home: HomeStore
     let weather: WeatherStore
     let settings: AppSettings
+    let automation: AutomationStore
     let name = "getHomeStatus"
     let description = "Returns the current state of every light, the thermostat, scenes, the weather and what's playing."
 
@@ -136,7 +198,9 @@ nonisolated struct HomeStatusTool: Tool {
     nonisolated struct Arguments {}
 
     func call(arguments: Arguments) async throws -> String {
-        await home.assistantStatus(weather: weather, prefs: settings.prefs)
+        let status = await home.assistantStatus(weather: weather, prefs: settings.prefs)
+        guard let scheduled = await automation.assistantSummary else { return status }
+        return status + "\n" + scheduled
     }
 }
 
@@ -302,6 +366,30 @@ extension HomeStore {
             lines.append("MUSIC: \(status) \(entry.title)\(entry.subtitle.map { " by \($0)" } ?? "").")
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+extension AutomationStore {
+    func assistantTimer(_ command: String, minutes: Int) -> String {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return "Say what to do when the timer ends." }
+        let timer = addTimer(command, after: TimeInterval(minutes * 60))
+        return "Success. Will \(command.lowercased()) at \(timer.fireDate.formatted(date: .omitted, time: .shortened))."
+    }
+
+    func assistantRoutine(_ command: String, time: RoutineTime, days: Set<Int>) -> String {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return "Say what the routine should do." }
+        let routine = Routine(command: command, time: time, days: days)
+        save(routine)
+        return "Success. \(routine.scheduleText), DankHome will \(command.lowercased())."
+    }
+
+    /// Timers and routines, for the home status.
+    var assistantSummary: String? {
+        var parts = timers.map { "timer: \($0.command) at \($0.fireDate.formatted(date: .omitted, time: .shortened))" }
+        parts += routines.filter(\.isEnabled).map { "routine: \($0.command), \($0.scheduleText.lowercased())" }
+        return parts.isEmpty ? nil : "SCHEDULED: \(parts.joined(separator: "; "))."
     }
 }
 

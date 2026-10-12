@@ -31,6 +31,8 @@ final class WeatherStore {
     private(set) var current: CurrentWeather?
     private(set) var hours: [HourForecast] = []
     private(set) var placeName = ""
+    /// Sunrise and sunset for today and tomorrow.
+    private(set) var sunTimes: [SunTimes] = []
     private(set) var errorMessage: String?
 
     @ObservationIgnored private let locationManager = CLLocationManager()
@@ -83,7 +85,7 @@ final class WeatherStore {
             URLQueryItem(name: "longitude", value: "\(longitude)"),
             URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day"),
             URLQueryItem(name: "hourly", value: "temperature_2m,weather_code,is_day"),
-            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min"),
+            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,sunrise,sunset"),
             URLQueryItem(name: "timeformat", value: "unixtime"),
             URLQueryItem(name: "timezone", value: "auto"),
             URLQueryItem(name: "forecast_days", value: "2"),
@@ -100,6 +102,12 @@ final class WeatherStore {
             high: response.daily.temperature_2m_max.first ?? response.current.temperature_2m,
             low: response.daily.temperature_2m_min.first ?? response.current.temperature_2m
         )
+
+        if let sunrise = response.daily.sunrise, let sunset = response.daily.sunset {
+            sunTimes = zip(sunrise, sunset).map {
+                SunTimes(sunrise: Date(timeIntervalSince1970: $0), sunset: Date(timeIntervalSince1970: $1))
+            }
+        }
 
         let now = Date.now.addingTimeInterval(-3600)
         hours = response.hourly.time.indices
@@ -200,6 +208,8 @@ private struct ForecastResponse: Decodable {
     struct Daily: Decodable {
         var temperature_2m_max: [Double]
         var temperature_2m_min: [Double]
+        var sunrise: [TimeInterval]?
+        var sunset: [TimeInterval]?
     }
 
     var current: Current

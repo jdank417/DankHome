@@ -174,7 +174,10 @@ final class HomeStore: NSObject {
     private(set) var homeName = "Home"
     private(set) var roomNames: [String] = []
     private(set) var lights: [Light] = [] {
-        didSet { trackOnSince() }
+        didSet {
+            trackOnSince()
+            forgetManualColors()
+        }
     }
     private(set) var thermostats: [Thermostat] = []
     private(set) var devices: [Device] = [] {
@@ -235,6 +238,9 @@ final class HomeStore: NSObject {
     @ObservationIgnored private var errorTask: Task<Void, Never>?
     /// While a scene button is being recorded, every light or thermostat the person touches.
     @ObservationIgnored var touched: Set<UUID>?
+    /// Lights someone gave a color or white temperature by hand. Adaptive lighting leaves
+    /// them alone until they're turned off.
+    @ObservationIgnored private var manualColor: Set<UUID> = []
 
     override init() {
         selectedRoom = UserDefaults.standard.string(forKey: "selectedRoom")
@@ -285,6 +291,7 @@ final class HomeStore: NSObject {
 
     func setColor(hue: Double, saturation: Double, for id: UUID) {
         touched?.insert(id)
+        manualColor.insert(id)
         update(id) {
             $0.hue = hue
             $0.saturation = saturation
@@ -308,6 +315,7 @@ final class HomeStore: NSObject {
     /// fall back to a matching low-saturation color.
     func setWhite(kelvin: Double, for id: UUID) {
         touched?.insert(id)
+        manualColor.insert(id)
         guard let light = lights.first(where: { $0.id == id }) else { return }
         guard light.colorTemperature != nil else {
             let warmth = (1 - (kelvin - 2000) / 4500).clamped(to: 0...1)
@@ -323,6 +331,28 @@ final class HomeStore: NSObject {
         }
         write(Int(mireds), type: HMCharacteristicTypeColorTemperature, to: id)
         write(true, type: HMCharacteristicTypePowerState, to: id)
+    }
+
+    /// Changes a white light's temperature for an automation (adaptive lighting, the
+    /// wake-up light). Unlike `setWhite`, it doesn't count as a manual choice.
+    func adaptWhite(kelvin: Double, for id: UUID) {
+        guard let light = lights.first(where: { $0.id == id }), light.colorTemperature != nil else { return }
+        let mireds = (1_000_000 / kelvin).rounded().clamped(to: light.colorTemperatureRange)
+        update(id) {
+            $0.colorTemperature = mireds
+            $0.usesWhite = true
+        }
+        write(Int(mireds), type: HMCharacteristicTypeColorTemperature, to: id)
+    }
+
+    func hasManualColor(_ id: UUID) -> Bool {
+        manualColor.contains(id)
+    }
+
+    private func forgetManualColors() {
+        guard !manualColor.isEmpty else { return }
+        let stillOn = Set(lights.filter(\.isOn).map(\.id))
+        manualColor.formIntersection(stillOn)
     }
 
     // MARK: Devices
@@ -844,6 +874,41 @@ final class HomeStore: NSObject {
                 }
             }
         }
+    }
+
+    // MARK: - Home hub triggers
+
+    /// Puts a schedule on the home hub that runs a Home app scene, so it happens even
+    /// when DankHome is closed. Returns the trigger's ID, or nil when there's no real home
+    /// or no such scene. Throws when HomeKit refuses (for example, no home hub).
+    func addHubTrigger(name: String, sceneName: String, time: RoutineTime, days: Set<Int>) async throws -> UUID? {
+        guard !isDemo, let home = manager.homes.first,
+              let actionSet = home.actionSets.first(where: { $0.name == sceneName }) else { return nil }
+        let event: HMEvent = switch time {
+        case .clock(let hour, let minute):
+            HMCalendarEvent(fire: DateComponents(hour: hour, minute: minute))
+        case .sunrise(let offset):
+            HMSignificantTimeEvent(significantEvent: .sunrise, offset: offset == 0 ? nil : DateComponents(minute: offset))
+        case .sunset(let offset):
+            HMSignificantTimeEvent(significantEvent: .sunset, offset: offset == 0 ? nil : DateComponents(minute: offset))
+        }
+        let recurrences = days.isEmpty || days.count == 7 ? nil : days.sorted().map { DateComponents(weekday: $0) }
+        let trigger = HMEventTrigger(name: name, events: [event], end: nil, recurrences: recurrences, predicate: nil)
+        try await home.addTrigger(trigger)
+        do {
+            try await trigger.addActionSet(actionSet)
+            try await trigger.enable(true)
+        } catch {
+            try? await home.removeTrigger(trigger)
+            throw error
+        }
+        return trigger.uniqueIdentifier
+    }
+
+    func removeHubTrigger(_ id: UUID) async {
+        guard let home = manager.homes.first,
+              let trigger = home.triggers.first(where: { $0.uniqueIdentifier == id }) else { return }
+        try? await home.removeTrigger(trigger)
     }
 
     // MARK: - Demo data

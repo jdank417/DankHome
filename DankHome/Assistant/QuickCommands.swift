@@ -12,6 +12,7 @@ struct QuickCommands {
     let home: HomeStore
     let music: MusicStore
     let settings: AppSettings
+    var automation: AutomationStore?
 
     private static let fillers = ["please", "can you", "could you", "would you", "hey", "dankhome", "dank home", "now"]
     /// Words that mean the request has conditions or timing the model should handle.
@@ -27,6 +28,8 @@ struct QuickCommands {
         for filler in Self.fillers { text = text.replacingOccurrences(of: " \(filler) ", with: " ") }
         text = text.replacingOccurrences(of: " +", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
 
+        if let reply = timerCommand(text) { return reply }
+
         let words = text.split(separator: " ").map(String.init)
         guard !words.isEmpty, words.count <= 9, Self.complex.isDisjoint(with: words) else { return nil }
 
@@ -35,6 +38,21 @@ struct QuickCommands {
         if let reply = deviceCommand(text) { return reply }
         if let reply = lightsCommand(text) { return reply }
         return sceneCommand(text)
+    }
+
+    // MARK: Timers
+
+    /// "turn off the lights in 30 minutes", "cancel the timers".
+    private func timerCommand(_ text: String) -> String? {
+        guard let automation else { return nil }
+        if text.captures("^(?:cancel|stop|clear|delete) (?:the |all |all the |my )*timers?$") != nil {
+            let count = automation.timers.count
+            automation.cancelAllTimers()
+            return count == 0 ? "There are no timers." : count == 1 ? "Canceled the timer." : "Canceled \(count) timers."
+        }
+        guard let timer = TimerPhrase.parse(text) else { return nil }
+        let scheduled = automation.addTimer(timer.command, after: timer.delay)
+        return "Okay, I'll \(timer.command) at \(scheduled.fireDate.formatted(date: .omitted, time: .shortened))."
     }
 
     // MARK: Music
@@ -148,16 +166,5 @@ struct QuickCommands {
             return nil
         }
         return home.assistantRunScene(scene.name)
-    }
-}
-
-private extension String {
-    /// Capture groups when the whole string matches `pattern`, else nil.
-    func captures(_ pattern: String) -> [String]? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: self, range: NSRange(startIndex..., in: self)) else { return nil }
-        return (1..<match.numberOfRanges).map { index in
-            Range(match.range(at: index), in: self).map { String(self[$0]) } ?? ""
-        }
     }
 }

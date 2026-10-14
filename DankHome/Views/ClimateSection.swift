@@ -5,6 +5,19 @@
 
 import SwiftUI
 
+/// Tapping the weather opens CARROT Weather, or Apple's Weather app if CARROT isn't installed.
+@MainActor
+enum WeatherApp {
+    static func open() {
+        Feedback.tap()
+        guard let carrot = URL(string: "carrotweather://"), let fallback = URL(string: "weather://") else { return }
+        Task {
+            let opened = await UIApplication.shared.open(carrot)
+            if !opened { _ = await UIApplication.shared.open(fallback) }
+        }
+    }
+}
+
 /// Big temperature in the header with today's high/low.
 struct WeatherSummary: View {
     @Environment(WeatherStore.self) private var weather
@@ -27,6 +40,10 @@ struct WeatherSummary: View {
             }
             .foregroundStyle(.white)
             .lineLimit(1)
+            .contentShape(.rect)
+            .onTapGesture { WeatherApp.open() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens CARROT Weather")
         } else if let error = weather.errorMessage {
             Label(error, systemImage: "cloud.slash")
                 .font(.footnote)
@@ -62,6 +79,10 @@ struct ForecastCard: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .card()
+            .contentShape(.rect)
+            .onTapGesture { WeatherApp.open() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens CARROT Weather")
         }
     }
 

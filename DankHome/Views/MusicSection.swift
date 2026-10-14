@@ -74,8 +74,7 @@ struct NowPlayingCard: View {
     private func backdrop(_ artwork: Artwork) -> some View {
         GeometryReader { proxy in
             let side = max(proxy.size.width, proxy.size.height) * 1.3
-            ArtworkImage(artwork, width: 300, height: 300)
-                .scaledToFill()
+            ArtworkImage(artwork, width: side, height: side)
                 .frame(width: side, height: side)
                 .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 .blur(radius: 40, opaque: true)

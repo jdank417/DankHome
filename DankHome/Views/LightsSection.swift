@@ -279,6 +279,8 @@ struct LightsHeader: View {
                       systemImage: home.lightsOnCount == 0 ? "lightbulb.max.fill" : "power")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 14)
                     .frame(height: Metrics.headerHeight)
             }

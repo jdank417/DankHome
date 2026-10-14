@@ -346,13 +346,14 @@ struct PhoneLightTile: View {
                     Rectangle().frame(width: width * fill)
                 }
         }
+        // Size the tile first, so the lit part fills its full height rather than the text's.
+        .frame(height: Self.height)
         .background(alignment: .leading) {
             Rectangle()
                 .fill(.white.opacity(0.92))
                 .overlay(light.tint.opacity(0.22))
                 .frame(width: width * fill)
         }
-        .frame(height: Self.height)
         .clipShape(.rect(cornerRadius: Metrics.radius))
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Metrics.radius))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
@@ -403,7 +404,7 @@ struct PhoneLightTile: View {
         }
         .foregroundStyle(color)
         .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private var statusText: String {
@@ -493,6 +494,10 @@ struct PhoneWeatherCard: View {
                 .scrollIndicators(.hidden)
             }
             .card()
+            .contentShape(.rect)
+            .onTapGesture { WeatherApp.open() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens CARROT Weather")
         } else if let error = weather.errorMessage {
             Label(error, systemImage: "cloud.slash")
                 .font(.footnote)

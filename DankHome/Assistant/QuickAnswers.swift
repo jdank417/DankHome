@@ -116,7 +116,7 @@ extension QuickCommands {
         if let g = text.captures("^(?:will|is) it (?:going to )?(rain|snow)(?: today| later| this afternoon| this evening| tonight| soon)?$")
             ?? text.captures("^(?:do|should) i (?:need|bring|take) (?:an )?(umbrella|a jacket|a coat)(?: today)?$") {
             let wantsSnow = g[0] == "snow"
-            let codes: (Int) -> Bool = wantsSnow ? Self.isSnow : Self.isRain
+            let codes = { (code: Int) -> Bool in wantsSnow ? Self.isSnow(code) : Self.isRain(code) }
             if let hour = weather.hours.prefix(12).first(where: { codes($0.code) }) {
                 return "\(wantsSnow ? "Snow" : "Rain") is likely around \(hour.id.formatted(.dateTime.hour()))."
             }

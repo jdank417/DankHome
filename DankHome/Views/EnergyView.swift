@@ -78,7 +78,7 @@ struct EnergySummary: View {
 
     var body: some View {
         HStack(spacing: Metrics.gap) {
-            tile(value: totalWatts.map(EnergyFormat.watts) ?? "—", label: "Using now", symbol: "bolt.fill", tint: .yellow)
+            tile(value: totalWatts.map { EnergyFormat.watts($0) } ?? "—", label: "Using now", symbol: "bolt.fill", tint: .yellow)
             tile(value: "\(items.count)", label: items.count == 1 ? "Thing on" : "Things on", symbol: "power", tint: .cyan)
             tile(value: "\(leftOn)", label: "Left on", symbol: "exclamationmark.triangle.fill", tint: leftOn > 0 ? .orange : .gray)
         }

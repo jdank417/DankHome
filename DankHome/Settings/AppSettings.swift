@@ -24,7 +24,7 @@ final class AppSettings {
     /// Lays the saved values over the defaults, so settings added in a newer version
     /// start at their default instead of wiping everything else.
     private static func load() -> Preferences? {
-        UserDefaults.standard.data(forKey: key).flatMap(decode)
+        UserDefaults.standard.data(forKey: key).flatMap { decode($0) }
     }
 
     static func decode(_ data: Data) -> Preferences? {

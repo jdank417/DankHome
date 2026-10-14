@@ -12,17 +12,17 @@ import Foundation
 extension QuickCommands {
     /// `text` is already normalized (see `QuickCommands.normalize`).
     func appCommand(_ text: String) -> String? {
-        levelCommand(text)
-            ?? app.flatMap { app in
-                nightClockCommand(text, app)
-                    ?? roomCommand(text, app)
-                    ?? unitsCommand(text, app)
-                    ?? adaptiveCommand(text, app)
-                    ?? wakeCommand(text, app)
-                    ?? saveCommand(text, app)
-                    ?? openCommand(text, app)
-                    ?? themeCommand(text, app)
-            }
+        if let reply = levelCommand(text) { return reply }
+        guard let app else { return nil }
+        // Tried in order; the first that recognizes the text answers.
+        let commands: [(String, AppControl) -> String?] = [
+            nightClockCommand, roomCommand, unitsCommand, adaptiveCommand,
+            wakeCommand, saveCommand, openCommand, themeCommand,
+        ]
+        for command in commands {
+            if let reply = command(text, app) { return reply }
+        }
+        return nil
     }
 
     // MARK: Shades and fans
